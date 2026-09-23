@@ -67,12 +67,16 @@ anything marked `precise`.
 - `bassalt_core` is an OBJECT library: the plugin registers itself from a
   file-scope constructor nothing references.
 - The macOS build must be universal. Check with `lipo`, never the build log.
-- Local repo only: no GitHub remote, no tag, not registered on the website.
+- Fleet repo: `stoatworks-labs/bassalt`, `~/Projects/resolume/bassalt`,
+  released v0.1.0 2026-09-23, registered in projects.json, sync-about TARGETS
+  and names.json. Version lives in CMakeLists `project(VERSION)` and
+  `StoatworksAbout.h` (generated; `sync-about.py --only bassalt --apply`).
 
 ## Not done yet
 - Never loaded into Resolume (oxbow probe only). No OFX port, browser demo,
-  factory presets or rocket mask. Never built on Windows.
-- `StoatworksAbout.h` and `ATTRIBUTIONS.md` are provisional hand copies.
+  factory presets or rocket mask. The Windows DLL is built by CI, never run.
+- `ATTRIBUTIONS.md` is still a hand copy: bassalt is in names.json but not in
+  sync-attributions' component lists.
 
 ## Diagnostics
 

@@ -337,8 +337,11 @@ sign in the buoyancy) and requires `--crossover` to fail (three checks do).
 - **Raw GL bindings** in the passes rather than the SDK's `Scoped*`: those clear
   to 0 on exit and cannot unwind three or more units (millpond's trap). Every
   unit is unbound once at the end of `ProcessOpenGL`; `--state` checks.
-- **Provisional About/ATTRIBUTIONS** hand copies with `guide = ""`, as in the
-  rest of the unreleased tranche.
+- **About is generated, `guide = ""`**: `StoatworksAbout.h` comes from
+  sync-about.py since the v0.1.0 registration; with no user guide the About
+  block is four parameters (38 in all). Writing a guide and setting
+  `"guide": true` makes it five, which needs a rebuild and `verify.sh`.
+  `ATTRIBUTIONS.md` is still hand-written.
 
 ## What is genuinely verified, and what is assumed
 

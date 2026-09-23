@@ -30,6 +30,38 @@ is a lens with a small upside-down ring in it. The picture is the harness's
 own card. Rendered by the plugin's offline harness (`bstest`), not captured
 from Resolume.</sub>
 
+<!-- downloads:start -->
+
+## Download
+
+**[v0.1.0](https://github.com/stoatworks-labs/bassalt/releases/tag/v0.1.0)** — prebuilt for macOS and Windows. Pick your platform:
+
+<details>
+<summary><b>macOS</b> — Universal (Apple Silicon + Intel)</summary>
+
+| Build | Download | Size |
+| --- | --- | --- |
+| Universal (Apple Silicon + Intel) · .dmg disk image | [`bassalt-0.1.0-macos-universal.dmg`](https://github.com/stoatworks-labs/bassalt/releases/download/v0.1.0/bassalt-0.1.0-macos-universal.dmg) | 262 KB |
+| Universal (Apple Silicon + Intel) · .zip archive | [`bassalt-macos-universal.zip`](https://github.com/stoatworks-labs/bassalt/releases/latest/download/bassalt-macos-universal.zip) | 220 KB |
+
+</details>
+
+<details>
+<summary><b>Windows</b> — x64</summary>
+
+| Build | Download | Size |
+| --- | --- | --- |
+| x64 · .exe installer | [`bassalt-0.1.0-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/bassalt/releases/download/v0.1.0/bassalt-0.1.0-windows-x86_64-setup.exe) | 234 KB |
+| x64 · .zip archive | [`bassalt-windows-x86_64.zip`](https://github.com/stoatworks-labs/bassalt/releases/latest/download/bassalt-windows-x86_64.zip) | 129 KB |
+
+</details>
+
+All builds, checksums and release notes: [github.com/stoatworks-labs/bassalt/releases](https://github.com/stoatworks-labs/bassalt/releases).
+
+macOS builds are signed and notarised and open normally. The Windows builds are unsigned, so SmartScreen warns once.
+
+<!-- downloads:end -->
+
 ## The one idea
 
 **The frame is a lava lamp, and the lamp is a heat engine.** A bulb in the base
@@ -107,14 +139,17 @@ Everything else is the physics.
 
 ## Status
 
-**v0.1.0, 2026-09-23, and honestly early.**
+**v0.1.0, released 2026-09-23, and honestly early.**
 
-It has **never been loaded into Resolume**. Everything here comes from the
-offline harness, which drives the real plugin class headlessly. `oxbow probe`
-reads the bundle the way a host does and finds `SW Bassalt` / `BS01` / effect;
-nothing else has run it. There is no OpenFX port, no browser demo and no
-factory presets. It has only been built and measured on macOS (Apple Silicon).
-A Windows build ships from CI and nothing has run it.
+It has **never been loaded into Resolume** on either platform. Everything here
+comes from the offline harness, which drives the real plugin class headlessly.
+`oxbow probe` on the *downloaded, notarised* release bundle reads it the way a
+host does and finds `SW Bassalt` / `BS01` / effect, 38 parameters; nothing
+else has run it. It has only been measured on macOS (Apple Silicon). The
+Windows x64 DLL is built by MSVC in CI (it compiled first time) and nothing
+has run it. There is no OpenFX port, no browser demo and no factory presets.
+The macOS downloads are signed and notarised (`spctl`: Notarized Developer
+ID); the Windows ones are unsigned.
 
 What is measured, on this machine:
 
