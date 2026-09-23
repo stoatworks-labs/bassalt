@@ -127,7 +127,7 @@ enum class View
 };
 
 /// Grid cells up the lamp's height. The width follows the frame's aspect,
-/// rounded to a multiple of 16 so the multigrid can halve it four times.
+/// rounded so the multigrid can halve it to its coarsest level (Physics.h).
 constexpr int kDetailCells[] = { 64, 96, 128, 192, 256 };
 constexpr int kDetailCount   = 5;
 

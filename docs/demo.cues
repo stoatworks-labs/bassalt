@@ -1,0 +1,16 @@
+# Bassalt demo reel: 10 s at 60 fps.
+#     bstest --film 600 --size 960x540 --script docs/demo.cues | ffmpeg ...
+# The warm lamp at 30x for two seconds; then Pour, and the card's bright ring
+# and bar become wax at the water's temperature -- above T*, so they rise,
+# neck and break up. Behind for the first half, Dyed for the second.
+#
+# Tracks are held before their first key and interpolated BETWEEN keys, so a
+# button is three keys: 119 Pour 0 / 120 Pour 1 / 121 Pour 0.
+0    Speed       0.6
+0    Pour        0
+119  Pour        0
+120  Pour        1
+121  Pour        0
+0    Clip        0
+299  Clip        0
+300  Clip        1

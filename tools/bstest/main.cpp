@@ -37,10 +37,14 @@
         --bulb         the bulb's lag is 63% at its time constant; a primed
                        onset detector fires on frame 1
         --glass        Flat is the identity; Cylinder is Snell, at two rasters
+        --lens         a round blob inflates to a sphere's lens
         --state        the host's GL state comes back as it went in
         --negative     every check above, against a wrong model, must fail
         --mutate       one character of the shipped GLSL changed must fail
         --bench        time a frame at 720p through 4K
+
+    Development aids: --probe [N] prints the lamp's state every N frames;
+    --dump DIR, with a check that calls dumpViews(), writes its fields.
 
     ----------------------------------------------------------- rasters
 
@@ -2889,7 +2893,8 @@ int main( int argc, char** argv )
 				"  --script PATH     parameter cues for --pipe/--film: 'frame Name value'\n"
 				"  --probe [N]       print the lamp's state every N frames\n\n"
 				"  --still --volume --crossover --darcy --multigrid --diffusion --rt --heat\n"
-				"  --bulb --glass --state --negative --mutate --bench\n" );
+				"  --bulb --glass --lens --state --negative --mutate --bench\n"
+				"  --dump DIR        with a check: write the fields it sets up (development aid)\n" );
 			return 0;
 		}
 		else if( argument == "--out" && hasNext )

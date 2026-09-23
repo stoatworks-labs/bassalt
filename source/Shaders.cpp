@@ -598,26 +598,20 @@ float psiAt( int I, int J )
 	return texelFetch( Psi, ivec2( I, J ), 0 ).x;
 }
 
-//Limited slopes. Both keep the face value between the cell and its downwind
-//neighbour, which with the Courant number held to 1/4 keeps every new value
-//a convex combination of old ones: no new extrema.
+//The limited slope. It keeps the face value between the cell and its
+//downwind neighbour, which with the Courant number held to 1/4 keeps every
+//new value a convex combination of old ones: no new extrema.
 float vanLeer( float back, float ahead )
 {
 	float p = back * ahead;
 	return p > 0.0 ? 2.0 * p / ( back + ahead ) : 0.0;
 }
-float superbee( float back, float ahead )
-{
-	if( back * ahead <= 0.0 )
-		return 0.0;
-	float a = abs( back );
-	float b = abs( ahead );
-	return sign( back ) * max( min( 2.0 * a, b ), min( a, 2.0 * b ) );
-}
 
 //The advective flux of (phi, T) through a face with speed w, the face lying
-//between q1 and q2, with q0 behind q1 and q3 ahead of q2. Superbee on the wax
-//keeps its edge sharp; van Leer on the heat keeps it smooth.
+//between q1 and q2, with q0 behind q1 and q3 ahead of q2. Van Leer on both.
+//Superbee on the wax, the first choice for its sharp edges, is anti-diffusive:
+//it put back the interface energy Cahn-Hilliard took out, and a resting blob's
+//spurious currents never died (AGENTS.md).
 vec2 advect( float w, vec4 q0, vec4 q1, vec4 q2, vec4 q3 )
 {
 	precise vec2 face;
