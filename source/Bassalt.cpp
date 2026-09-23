@@ -159,14 +159,14 @@ BassaltPlugin::BassaltPlugin()
 	SetTimeSupported( true );
 
 	//-------------------------------------------------------------------
-	// Defaults. A 30 cm lamp on a 30 W bulb, already warm, at 30x: dropping
+	// Defaults. A 30 cm lamp on a 30 W bulb, already warm, at 3x: dropping
 	// the effect on a layer shows wax moving straight away rather than an hour
 	// of a lamp warming up.
 	//-------------------------------------------------------------------
 	params[ PT_LAMP_HEIGHT ] = 0.477f;//0.30 m
 	params[ PT_GAP ]         = 0.463f;//4 mm
 	params[ PT_DETAIL ]      = 2.0f;  //128 cells up
-	params[ PT_SPEED ]       = ParamFromSpeed( 30.0f );
+	params[ PT_SPEED ]       = ParamFromSpeed( 3.0f );
 	params[ PT_AMBIENT ]     = 0.4f;  //22 C
 	params[ PT_WARM ]        = 0.0f;
 	params[ PT_RESET ]       = 0.0f;

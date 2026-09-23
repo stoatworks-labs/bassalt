@@ -845,7 +845,7 @@ bool physicsRig( Rig& rig, int cells, double height, int width = 320, int height
 struct Perturb
 {
 	bool stillTilt         = false;///< --still: the slab one cell out of level across the lamp
-	bool frozenInterface   = false;///< --still: Cahn-Hilliard's mobility zeroed in the shader
+	bool antiTension       = false;///< --still: the Korteweg force's sign flipped in the shader
 	bool nonConservative   = false;///< --volume: each cell uses its own outflow speed on both faces
 	bool unlimited         = false;///< --volume: the heat limiter replaced by a plain average
 	double expansionSign   = 1.0;  ///< --crossover: -1 expects the wax to contract on heating
@@ -1209,9 +1209,23 @@ int runStill( const Perturb& perturb )
 {
 	std::printf( "\n=== still: a level lamp at rest stays at rest\n" );
 	ShippedShaders restoreShaders;
-	if( perturb.frozenInterface
-	    && !overrideShader( ShaderId::Interface, "precise float mobility = Mobility * max(", "precise float mobility = 0.0 * max(" ) )
-		return 1;
+	if( perturb.antiTension )
+	{
+		//Both faces' Korteweg terms, so it is a model and not a one-sided bug.
+		std::string text = ShippedSource( ShaderId::Circulation );
+		int count        = 0;
+		for( size_t at = text.find( "* Beta *" ); at != std::string::npos; at = text.find( "* Beta *", at + 1 ) )
+		{
+			text.replace( at, 8, "* -Beta *" );
+			++count;
+		}
+		if( count != 2 )
+		{
+			Check( false, "the circulation shader has its two Korteweg terms" );
+			return Verdict();
+		}
+		SetShaderOverride( ShaderId::Circulation, text );
+	}
 
 	//-------------------------------------------------------------------
 	// A: a cold slab, bulb off, everything at the room's temperature.
@@ -2018,9 +2032,27 @@ int runHeat( const Perturb& perturb )
 		//so y = a tau + B e^(-t/tb) + ( y0 - a tau - B ) e^(-t/tau).
 		const double a = P / capacity, B = ( P0 - P ) / capacity / ( 1.0 / tau - 1.0 / tauBulb );
 		const double y = a * tau + B * std::exp( -t / tauBulb ) + ( ( start - Ta ) - a * tau - B ) * std::exp( -t / tau );
-		//Forward Euler's global error: at most ( dt_max / 2 ) t max|y''|, and
-		//|y''| <= a / tauBulb + a / tau here.
-		truncation = 0.5 * maxDt * t * ( a / tauBulb + a / tau ) + bound;
+		//Forward Euler's global error for a stable linear ODE: each step's
+		//local error ( dt^2 / 2 ) |y''| is carried on undamped at worst, so the
+		//total is at most ( dt_max / 2 ) times the integral of |y''| -- taken
+		//numerically from the closed form, since the bulb's ramp puts nearly
+		//all of it in the first second.
+		double integral = 0.0;
+		{
+			const int samples = 4000;
+			auto second = [ & ]( double s ) {
+				const double ys  = a * tau + B * std::exp( -s / tauBulb ) + ( ( start - Ta ) - a * tau - B ) * std::exp( -s / tau );
+				const double yp  = ( P + ( P0 - P ) * std::exp( -s / tauBulb ) ) / capacity - ys / tau;
+				return -( P0 - P ) / ( capacity * tauBulb ) * std::exp( -s / tauBulb ) - yp / tau;
+			};
+			//Densely where the bulb's ramp is, then evenly.
+			const double ramp = std::min( t, 10.0 * tauBulb );
+			for( int i = 0; i < samples; ++i )
+				integral += std::fabs( second( ( i + 0.5 ) * ramp / samples ) ) * ramp / samples;
+			for( int i = 0; i < samples; ++i )
+				integral += std::fabs( second( ramp + ( i + 0.5 ) * ( t - ramp ) / samples ) ) * ( t - ramp ) / samples;
+		}
+		truncation = 0.5 * maxDt * integral + bound;
 		worstContinuous = std::max( worstContinuous, std::fabs( ( m - Ta ) - y ) / truncation );
 		if( atTau == 0.0 && t >= tau )
 			atTau = ( m - start ) / ( Ta + P / G - start );
@@ -2134,6 +2166,366 @@ int runBulb( const Perturb& perturb )
 }
 const Registrar kBulb( "bulb", runBulb );
 
+
+//===========================================================================
+// --glass
+//===========================================================================
+
+/// The cylinder, in closed form: a vertical cylinder of radius R = W / 2 seen
+/// side on, screen x as X = 2u - 1 in radii. Snell at the front, straight
+/// across to the back, Snell again, then on to a world D behind the back.
+/// Returns where the ray crosses the middle plane (slice) and lands (world),
+/// as fractions of the frame.
+void cylinderMap( double u, double n, double D, double W, double& slice, double& world )
+{
+	const double X  = 2.0 * u - 1.0;
+	const double ti = std::asin( X ), tt = std::asin( X / n ), d1 = ti - tt;
+	const double zs = std::sqrt( 1.0 - X * X );
+	const double dx = -std::sin( d1 ), dz = -std::cos( d1 );
+	const double chord = -2.0 * ( X * dx + zs * dz );
+	const double ex = X + chord * dx, ez = zs + chord * dz;
+	const double zb  = -1.0 - D / ( 0.5 * W );
+	const double run = ( ez - zb ) / std::cos( 2.0 * d1 );
+	slice = 0.5 + 0.5 * ( X - zs * std::tan( d1 ) );
+	world = 0.5 + 0.5 * ( ex - run * std::sin( 2.0 * d1 ) );
+}
+
+int runGlass( const Perturb& perturb )
+{
+	std::printf( "\n=== glass: Flat with no wax is the identity; Cylinder is Snell's law, at two rasters\n" );
+	const double n = perturb.index > 0.0 ? perturb.index : ph::kWaterIndex;
+	const int sizes[][ 2 ] = { { 480, 270 }, { 1280, 720 } };
+	for( const auto& size : sizes )
+	{
+		const int w = size[ 0 ], h = size[ 1 ];
+		const Floats card = coordinateCard( w, h );
+		for( int mode = 0; mode < 3; ++mode )//Flat, Cylinder behind, Cylinder dyed
+		{
+			Rig rig;
+			if( !rig.Init( w, h, &card ) )
+				return 1;
+			rig.Set( PT_GLOW, 0.0f );
+			rig.Set( PT_TINT_R, 1.0f );
+			rig.Set( PT_TINT_G, 1.0f );
+			rig.Set( PT_TINT_B, 1.0f );
+			rig.Set( PT_SPEED, 0.0f );
+			rig.Set( PT_REFRACTION, 0.3f );
+			rig.Set( PT_GLASS, mode == 0 ? 0.0f : 1.0f );
+			rig.Set( PT_CLIP, mode == 2 ? 1.0f : 0.0f );
+			rig.Render( 1 );
+			const ph::Grid g = rig.plugin.CurrentGrid();
+			//No wax for the identity and Behind; ALL wax, with the dye at rest,
+			//for Dyed -- the output is then the clip read at the middle plane.
+			load( rig, makeState( g, [ & ]( double, double ) { return mode == 2 ? 1.0 : -1.0; },
+			                      []( double, double ) { return 22.0; } ) );
+			rig.Render( 1 );
+			const Floats out = rig.Output();
+			const double W   = g.nx * g.dx;
+
+			//Tolerances. The card is linear, so bilinear filtering returns the
+			//coordinate exactly -- except that filter weights carry 8 bits
+			//below the texel (the D3D10 floor every desktop GPU meets):
+			//1/512 of a texel. Dyed reads the dye's field too, a second
+			//filtered read: 1/512 of a cell. And asin, tan, sin and cos, to
+			//which GLSL gives no accuracy bound: 2e-5 of the frame, two
+			//hundred float ulps of a unit coordinate.
+			double tolerance = 0.5 / 256.0 / w + 2e-5;
+			if( mode == 2 )
+				tolerance += 0.5 / 256.0 / g.nx;
+			double worstX = 0.0, worstY = 0.0;
+			int counted = 0;
+			for( int y = 0; y < h; ++y )
+				for( int x = 0; x < w; ++x )
+				{
+					const double u = ( x + 0.5 ) / w, v = ( y + 0.5 ) / h;
+					//The dye is stored at cell centres; within half a cell of the
+					//top and bottom its field is clamped to the edge cell's, by
+					//construction and not by the glass.
+					if( mode == 2 && ( v < 0.5 / g.ny || v > 1.0 - 0.5 / g.ny ) )
+						continue;
+					double expected = u;
+					if( mode > 0 )
+					{
+						if( std::fabs( 2.0 * u - 1.0 ) > 0.95 )
+							continue;
+						double slice = 0, world = 0;
+						cylinderMap( u, n, RefractionFromParam( 0.3f ), W, slice, world );
+						expected = mode == 1 ? world : slice;
+						if( expected < 0.01 || expected > 0.99 )
+							continue;
+					}
+					const float* p = &out[ ( static_cast< size_t >( y ) * w + x ) * 4 ];
+					worstX = std::max( worstX, std::fabs( p[ 0 ] - expected ) );
+					worstY = std::max( worstY, std::fabs( p[ 1 ] - v ) + std::fabs( p[ 2 ] ) );
+					++counted;
+				}
+			const char* names[] = { "Flat, no wax: the identity", "Cylinder, Behind: the world through the whole cylinder",
+				                    "Cylinder, Dyed: the middle plane through the front" };
+			//Up: exact but for the filters' 8 sub-texel bits in Dyed: the dye field, then the clip.
+			const double upBound = mode == 2 ? 0.5 / 256.0 / g.ny + 0.5 / 256.0 / h + 1e-6 : 1e-6;
+			Check( worstX <= ( mode == 0 ? 1e-6 : tolerance ) && worstY <= upBound,
+			       fmt( "%dx%d %s -- across %.2e, up %.2e (bound %.1e; %d pixels)", w, h, names[ mode ], worstX, worstY,
+			            mode == 0 ? 1e-6 : tolerance, counted ) );
+		}
+	}
+	return Verdict();
+}
+const Registrar kGlass( "glass", runGlass );
+
+//===========================================================================
+// --state
+//===========================================================================
+int runState( const Perturb& )
+{
+	std::printf( "\n=== state: what the host hands over is what it gets back\n" );
+	Rig rig;
+	if( !rig.Init( 320, 180 ) )
+		return 1;
+	rig.Set( PT_SPEED, speedParam( 30.0 ) );
+	GLuint hostArray = 0, hostPack = 0;
+	glGenVertexArrays( 1, &hostArray );
+	glGenBuffers( 1, &hostPack );
+	int problems = 0;
+	std::string what;
+	for( int frame = 0; frame < 4; ++frame )
+	{
+		glBindFramebuffer( GL_FRAMEBUFFER, rig.outputFBO );
+		glViewport( 7, 5, 300, 170 );
+		glBindVertexArray( hostArray );
+		glBindBuffer( GL_PIXEL_PACK_BUFFER, hostPack );
+		glEnable( GL_BLEND );
+		glBlendFuncSeparate( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO );
+		glClearColor( 0.2f, 0.3f, 0.4f, 0.5f );
+		glEnable( GL_SCISSOR_TEST );
+		glScissor( 0, 0, 320, 180 );
+		glActiveTexture( GL_TEXTURE0 );
+		glUseProgram( 0 );
+
+		rig.plugin.SetTime( frame / 60.0 );
+		if( rig.plugin.ProcessOpenGL( &rig.process ) != FF_SUCCESS )
+			return 1;
+
+		GLint viewport[ 4 ] = {}, array = 0, program = 0, unit = 0, fbo = 0, src = 0, dst = 0, pack = 0;
+		GLfloat clear[ 4 ] = {};
+		glGetIntegerv( GL_VIEWPORT, viewport );
+		glGetIntegerv( GL_VERTEX_ARRAY_BINDING, &array );
+		glGetIntegerv( GL_CURRENT_PROGRAM, &program );
+		glGetIntegerv( GL_ACTIVE_TEXTURE, &unit );
+		glGetIntegerv( GL_FRAMEBUFFER_BINDING, &fbo );
+		glGetIntegerv( GL_BLEND_SRC_RGB, &src );
+		glGetIntegerv( GL_BLEND_DST_RGB, &dst );
+		glGetIntegerv( GL_PIXEL_PACK_BUFFER_BINDING, &pack );
+		glGetFloatv( GL_COLOR_CLEAR_VALUE, clear );
+		auto expect = [ & ]( bool ok, const char* name ) {
+			if( !ok )
+			{
+				++problems;
+				what += std::string( " " ) + name;
+			}
+		};
+		expect( viewport[ 0 ] == 7 && viewport[ 1 ] == 5 && viewport[ 2 ] == 300 && viewport[ 3 ] == 170, "viewport" );
+		expect( array == static_cast< GLint >( hostArray ), "vertex-array" );
+		expect( program == 0, "program" );
+		expect( unit == GL_TEXTURE0, "active-unit" );
+		expect( fbo == static_cast< GLint >( rig.outputFBO ), "framebuffer" );
+		expect( pack == static_cast< GLint >( hostPack ), "pack-buffer" );
+		expect( glIsEnabled( GL_BLEND ) && src == GL_SRC_ALPHA && dst == GL_ONE_MINUS_SRC_ALPHA, "blend" );
+		expect( glIsEnabled( GL_SCISSOR_TEST ), "scissor" );
+		expect( clear[ 0 ] == 0.2f && clear[ 1 ] == 0.3f && clear[ 2 ] == 0.4f && clear[ 3 ] == 0.5f, "clear-colour" );
+		for( int u = 0; u < 8; ++u )
+		{
+			GLint bound = 0;
+			glActiveTexture( static_cast< GLenum >( GL_TEXTURE0 + u ) );
+			glGetIntegerv( GL_TEXTURE_BINDING_2D, &bound );
+			expect( bound == 0, "texture-unit" );
+		}
+		glActiveTexture( GL_TEXTURE0 );
+	}
+	glDisable( GL_SCISSOR_TEST );
+	glDisable( GL_BLEND );
+	glBindVertexArray( 0 );
+	glBindBuffer( GL_PIXEL_PACK_BUFFER, 0 );
+	glDeleteVertexArrays( 1, &hostArray );
+	glDeleteBuffers( 1, &hostPack );
+	Check( problems == 0, fmt( "four frames (the speed read through a pack buffer on each): viewport, vertex array, program, "
+	                           "active unit, framebuffer, pack buffer, blend, scissor, clear colour and eight texture units all "
+	                           "as the host left them (%d wrong:%s)",
+	                           problems, what.empty() ? " none" : what.c_str() ) );
+	return Verdict();
+}
+const Registrar kState( "state", runState );
+
+//===========================================================================
+// --mutate: one character of the shipped GLSL changed must fail a check.
+//===========================================================================
+int runMutate( const Perturb& )
+{
+	std::printf( "\n=== mutate: the harness drives the shipped GLSL -- one character changed must fail a check\n" );
+	const std::string shipped = ShippedSource( ShaderId::Circulation );
+	const std::string from = "buoyancy = -Gravity", to = "buoyancy = +Gravity";
+	const size_t at = shipped.find( from );
+	if( at == std::string::npos || shipped.find( from, at + 1 ) != std::string::npos )
+	{
+		Check( false, "the circulation shader has '" + from + "' exactly once" );
+		return Verdict();
+	}
+	std::string mutated = shipped;
+	mutated.replace( at, from.size(), to );
+	int differ = 0;
+	for( size_t k = 0; k < shipped.size(); ++k )
+		differ += shipped[ k ] != mutated[ k ];
+	std::printf( "  circulation shader, character %zu: '-' -> '+' (gravity's sign in the buoyancy); %d character%s differ%s\n",
+	             at + from.size() - 8, differ, differ == 1 ? "" : "s", differ == 1 ? "s" : "" );
+	SetShaderOverride( ShaderId::Circulation, mutated );
+	const int before = g_failures;
+	g_failures       = 0;
+	runCrossover( Perturb {} );
+	const int observed = g_failures;
+	g_failures         = before;
+	ClearShaderOverrides();
+	Check( differ == 1 && observed > 0,
+	       fmt( "--crossover against the mutated shader: %d check%s failed, as %s must", observed, observed == 1 ? "" : "s",
+	            observed == 1 ? "it" : "they" ) );
+	return Verdict();
+}
+const Registrar kMutate( "mutate", runMutate );
+
+
+//===========================================================================
+// --rt
+//===========================================================================
+struct RtResult
+{
+	double k = 0, measured = 0, relaxation = 0, theory = 0, drag = 0;
+};
+
+/// One mode: a light wax layer under heavy water with its surface
+/// A0 cos( k x ), and the mode's amplitude's log-rate over `window` seconds,
+/// read from the wax in each column (its height, exactly, for a layer).
+double rtRate( int cells, double k, double window, bool frozen, double& settled, double tension = 0.008 )
+{
+	Rig rig;
+	if( !physicsRig( rig, cells, 0.3 ) )
+		return 0.0;
+	double salt       = 0.0;
+	const float saltP = saltForCrossover( 30.0, salt );
+	const float ambP  = ambientParam( 38.0 );
+	rig.Set( PT_SALT, saltP );
+	rig.Set( PT_AMBIENT, ambP );
+	rig.Set( PT_MELTING_POINT, meltParam( 35.0 ) );
+	rig.Set( PT_WAX_VISCOSITY, viscosityParam( ph::kLiquidViscosity ) );
+	rig.Set( PT_TENSION, tensionParam( tension ) );
+	rig.Set( PT_SPEED, 0.0f );
+	rig.plugin.SetFlowFrozenForTest( frozen );
+	rig.Render( 1 );
+	const ph::Grid g = rig.plugin.CurrentGrid();
+	const double T = deliveredAmbient( ambP ), H = g.ny * g.dy, h1 = 0.25 * H, A0 = 3e-4;
+	load( rig, makeState( g, [ & ]( double x, double y ) { return h1 + A0 * std::cos( k * x ) - y; },
+	                      [ & ]( double, double ) { return T; } ) );
+	auto amplitude = [ & ]() {
+		const Field s = readField( rig );
+		double a = 0.0;
+		for( int i = 0; i < s.nx; ++i )
+		{
+			double column = 0.0;
+			for( int j = 0; j < s.ny; ++j )
+				column += s.at( i, j, 0 ) * g.dy;
+			a += column * std::cos( k * ( i + 0.5 ) * g.dx ) * g.dx;
+		}
+		return 2.0 * a / ( s.nx * g.dx );
+	};
+	//A few frames for the diffuse profile to settle onto the grid, then time.
+	rig.Render( 3 );
+	settled = amplitude();
+	const double t0 = rig.plugin.SimTime();
+	rig.Render( std::max( 1, static_cast< int >( std::lround( window * 60.0 ) ) ) );
+	return std::log( std::fabs( amplitude() / settled ) ) / ( rig.plugin.SimTime() - t0 );
+}
+
+int runRT( const Perturb& perturb )
+{
+	std::printf( "\n=== rt: a light layer under a heavy one grows below the capillary cutoff and decays above it\n" );
+	double salt = 0.0;
+	saltForCrossover( 30.0, salt );
+	const double T     = deliveredAmbient( ambientParam( 38.0 ) );
+	const double drho  = ph::CrossoverSlope( salt ) * ( T - ph::Crossover( salt ) );//rho_water - rho_wax
+	const double sigma = perturb.noTension ? 0.0 : static_cast< double >( TensionFromParam( tensionParam( 0.008 ) ) );
+	const double gap   = GapFromParam( 0.463f );
+	const double K     = gap * gap / ( 12.0 * static_cast< double >( WaxViscosityFromParam( viscosityParam( ph::kLiquidViscosity ) ) ) );
+	const double Kw    = gap * gap / ( 12.0 * ph::kLiquidViscosity );
+	const double W = ph::ChooseGrid( 0.3 * 320.0 / 180.0, 0.3, 128 ).nx * ph::ChooseGrid( 0.3 * 320.0 / 180.0, 0.3, 128 ).dx;
+	const double H = 0.3, h1 = 0.25 * H, h2 = H - h1;
+	const double kc = std::sqrt( drho * ph::kGravity / std::max( sigma, 1e-12 ) );
+	std::printf( "  drho = %.3f kg/m^3, sigma = %.1f mN/m: k_c = %.1f /m (wavelength %.1f cm)\n", drho, sigma * 1000.0, kc,
+	             2.0 * kPi / kc * 100.0 );
+
+	//The law is for a sharp interface; the lamp's is xi = one cell wide and
+	//answers a displacement with less flow the shorter the wave. That response
+	//is the same whatever drives it, so it is MEASURED, mode by mode, with no
+	//surface tension (the law is then pure buoyancy): F( k ) = s( sigma = 0 ) /
+	//s_sharp( sigma = 0 ). Divided out, what is left to check is the capillary
+	//part: the sign either side of k_c, the rate, and the cutoff.
+	const ph::Grid g0 = ph::ChooseGrid( W, H, 128 );
+	const double xi   = ph::InterfaceWidth( g0 );
+	std::vector< double > ks, qs;
+	const int modes[] = { 6, 9, 18, 24 };
+	for( int n : modes )
+	{
+		const double k      = n * kPi / W;
+		const double theory = ph::RayleighTaylorRate( k, drho, sigma, K, h1, Kw, h2 );
+		const double buoy   = ph::RayleighTaylorRate( k, drho, 0.0, K, h1, Kw, h2 );
+		const double lawTrue = ph::RayleighTaylorRate( k, drho, static_cast< double >( TensionFromParam( tensionParam( 0.008 ) ) ), K, h1, Kw, h2 );
+		double a0 = 0.0;
+		const double flowing = rtRate( 128, k, std::min( 1.0, 0.8 / std::fabs( lawTrue ) ), false, a0 );
+		const double frozen  = rtRate( 128, k, std::min( 1.0, 0.8 / std::fabs( lawTrue ) ), true, a0 );
+		const double noTens  = rtRate( 128, k, std::min( 1.0, 0.8 / buoy ), false, a0, 0.0 );
+		const double F       = noTens / buoy;
+		//The Cahn-Hilliard relaxation (flow frozen) is the diffuse model's own
+		//and not in the law either; it is taken out too.
+		const double corrected = ( flowing - frozen ) / F;
+		const double drag = 1.0 / ( std::tanh( k * h1 ) * K ) + 1.0 / ( std::tanh( k * h2 ) * Kw );
+		ks.push_back( k * k );
+		qs.push_back( corrected * drag / k );
+
+		//Allowance: first order in k xi. Buoyancy's response is divided out
+		//exactly; surface tension acts through the same interface but by the
+		//curvature of the chemical potential, whose diffuse response can differ
+		//from buoyancy's at the next order in k xi.
+		const double allowance = k * xi * std::fabs( theory );
+		Check( ( flowing > 0.0 ) == ( theory > 0.0 ) && std::fabs( corrected - theory ) <= allowance,
+		       fmt( "k = %6.1f /m (%.2f k_c): %s; measured %+.4f /s, the interface's response F = %.3f, so %+.4f against the law's "
+		            "%+.4f (off %.1f%%, allowance k xi = %.1f%%)",
+		            k, k / kc, flowing > 0.0 ? "grows" : "decays", flowing, F, corrected, theory,
+		            100.0 * std::fabs( corrected - theory ) / std::fabs( theory ), 100.0 * k * xi ) );
+	}
+
+	//The cutoff: q = s drag / k = drho g - sigma k^2 is a straight line in k^2;
+	//fitted through the four corrected modes, its zero is the measured k_c.
+	double mk = 0, mq = 0;
+	for( size_t i = 0; i < ks.size(); ++i )
+	{
+		mk += ks[ i ] / ks.size();
+		mq += qs[ i ] / qs.size();
+	}
+	double sxy = 0, sxx = 0;
+	for( size_t i = 0; i < ks.size(); ++i )
+	{
+		sxy += ( ks[ i ] - mk ) * ( qs[ i ] - mq );
+		sxx += ( ks[ i ] - mk ) * ( ks[ i ] - mk );
+	}
+	const double slope = sxy / sxx, intercept = mq - slope * mk;
+	const double kcFit = std::sqrt( intercept / -slope );
+	//k_c goes as sqrt( drho g / sigma ): half the relative error of each, both
+	//first order in k xi at k_c.
+	Check( std::fabs( kcFit - kc ) <= kc * xi * kc,
+	       fmt( "the cutoff: fitted drho g = %.2f (law %.2f), sigma = %.2f mN/m (law %.2f), so k_c = %.1f /m against %.1f "
+	            "(off %.1f%%, allowance k_c xi = %.1f%%)",
+	            intercept, drho * ph::kGravity, -slope * 1000.0, sigma * 1000.0, kcFit, kc, 100.0 * std::fabs( kcFit - kc ) / kc,
+	            100.0 * kc * xi ) );
+	return Verdict();
+}
+const Registrar kRT( "rt", runRT );
+
 //@CHECKS@
 
 //===========================================================================
@@ -2155,8 +2547,8 @@ int runNegative( const Perturb& )
 		cases.push_back( { name, CheckTable()[ name ], p, what } );
 	};
 	add( "still", "the slab one cell out of level across the lamp: not hydrostatic, so it must move", []( Perturb& p ) { p.stillTilt = true; } );
-	add( "still", "Cahn-Hilliard's mobility zeroed in the shader: the interface cannot relax, the currents cannot die",
-	     []( Perturb& p ) { p.frozenInterface = true; } );
+	add( "still", "the Korteweg force's sign flipped in the shader: surface tension that pulls a blob apart",
+	     []( Perturb& p ) { p.antiTension = true; } );
 	add( "volume", "each cell advects through its left face at its right face's speed: not conservative",
 	     []( Perturb& p ) { p.nonConservative = true; } );
 	add( "volume", "the heat's limiter replaced by a plain average: new extrema", []( Perturb& p ) { p.unlimited = true; } );
@@ -2164,7 +2556,11 @@ int runNegative( const Perturb& )
 	add( "darcy", "expect U = K_out drho g: no depolarisation factor", []( Perturb& p ) { p.noDepolarisation = true; } );
 	add( "multigrid", "the coarse-grid correction dropped from the shader", []( Perturb& p ) { p.noCoarseCorrection = true; } );
 	add( "diffusion", "expect sigma^2 to grow as 4 kappa t", []( Perturb& p ) { p.diffusionFactor = 4.0; } );
-//@NEGATIVES@
+	add( "rt", "expect the growth law without surface tension", []( Perturb& p ) { p.noTension = true; } );
+	add( "heat", "expect one glass face losing heat instead of two", []( Perturb& p ) { p.faces = 1.0; } );
+	add( "bulb", "expect the lag half done at tau instead of 1 - 1/e", []( Perturb& p ) { p.lagFraction = 0.5; } );
+	add( "bulb", "the onset detector not primed on its first frame", []( Perturb& p ) { p.unprimed = true; } );
+	add( "glass", "expect glass's index, n = 1.5, not water's", []( Perturb& p ) { p.index = 1.5; } );
 
 	int unfalsifiable = 0;
 	for( const Case& c : cases )
