@@ -112,6 +112,18 @@ Each blob is inflated into one: its thickness is 4 sqrt( h ), with
 exactly a sphere's chord, 2 sqrt( R^2 - r^2 ). `bstest --lens` checks that.
 Everything else is the physics.
 
+[![Bassalt — a lava lamp as an effect, for Resolume](docs/video-thumb.png)](https://www.youtube.com/watch?v=TUJutkxg1KY)
+
+*[Watch it](https://www.youtube.com/watch?v=TUJutkxg1KY) — 51 seconds: a hot
+layer of wax leaving the base as pillars that neck and pinch off, every blob a
+lens over the world behind it, Dyed turning the clip into the wax, Pour turning
+a bright ball into wax that rises and breaks up, Salt floating all of it to the
+cap, and the velocity field underneath. Every frame is the real plugin's
+output: an FFGL plugin has no window, so the footage is rendered by this
+repository's own offline harness (`bstest --pipe`, driven by a cue sheet)
+rather than filmed off a screen, and the clips are Resolume's bundled demo
+media. The whole take is one run of one lamp, never reset.*
+
 ## Controls
 
 - **Lamp:** Lamp Height (the frame's height, 0.1 to 1 m) and Gap (the lamp's
