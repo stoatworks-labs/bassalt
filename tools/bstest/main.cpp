@@ -65,6 +65,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <csignal>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -2708,6 +2709,11 @@ const Registrar kBench( "bench", runBench );
 int runPipe( int width, int height, const std::string& scriptPath, int filmFrames, bool beat,
              const std::vector< std::string >& settings )
 {
+	// A reader that goes away (ffmpeg stopped, `head -c`) must end the run with a
+	// failure, not kill it with a signal nobody reports: with SIGPIPE ignored the
+	// write below returns EPIPE and the pipe exits 1.
+	std::signal( SIGPIPE, SIG_IGN );
+
 	Rig rig;
 	if( !rig.Init( width, height ) )
 		return 1;
