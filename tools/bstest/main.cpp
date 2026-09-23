@@ -1210,7 +1210,7 @@ int runStill( const Perturb& perturb )
 	std::printf( "\n=== still: a level lamp at rest stays at rest\n" );
 	ShippedShaders restoreShaders;
 	if( perturb.frozenInterface
-	    && !overrideShader( ShaderId::Update, "float mobility = Mobility * max(", "float mobility = 0.0 * max(" ) )
+	    && !overrideShader( ShaderId::Interface, "precise float mobility = Mobility * max(", "precise float mobility = 0.0 * max(" ) )
 		return 1;
 
 	//-------------------------------------------------------------------
@@ -1240,20 +1240,6 @@ int runStill( const Perturb& perturb )
 
 		double worstPsi = 0.0;
 		int unevenRows = 0, warmCells = 0;
-		if( perturb.stillTilt )
-		{
-			rig.plugin.KeepStepLog( true );
-			for( int f = 0; f < 12; ++f )
-			{
-				rig.Render( 1 );
-				const Field s = readField( rig );
-				double tmin = 1e30, tmax = -1e30, pmin = 1e30, pmax = -1e30;
-				for( float v : s.data ) { (void)v; }
-				for( int j = 0; j < s.ny; ++j ) for( int i = 0; i < s.nx; ++i ) { tmin = std::min( tmin, (double)s.at(i,j,1) ); tmax = std::max( tmax, (double)s.at(i,j,1) ); pmin = std::min( pmin, (double)s.at(i,j,0) ); pmax = std::max( pmax, (double)s.at(i,j,0) ); }
-				const auto& lg = rig.plugin.StepLog();
-				std::printf( "TILT f%d t=%.2f sub %d |u| %.3e est %.3e dt %.4f T [%.4f %.4f] phi [%.4f %.4f]\n", f, rig.plugin.SimTime(), rig.plugin.LastSubsteps(), velocityFrom( rig.Psi(), g ).MaxSpeed(), lg.back().speed, lg.back().dt, tmin, tmax, pmin, pmax );
-			}
-		}
 		for( int block = 0; block < 6; ++block )
 		{
 			rig.Render( 20 );
@@ -1483,7 +1469,8 @@ int runMultigrid( const Perturb& perturb )
 	std::printf( "\n=== multigrid: the residual falls by the stated factor, and the step gets the flow it needs\n" );
 	ShippedShaders restoreShaders;
 	if( perturb.noCoarseCorrection
-	    && !overrideShader( ShaderId::Prolong, "texelFetch( Psi, n, 0 ).x + Weight * e", "texelFetch( Psi, n, 0 ).x + 0.0 * e" ) )
+	    && !overrideShader( ShaderId::Prolong, "texelFetch( Psi, n, 0 ).x + Weight * interpolated( n )",
+	                        "texelFetch( Psi, n, 0 ).x + 0.0 * interpolated( n )" ) )
 		return 1;
 
 	auto report = [ & ]( const char* what, const std::vector< double >& h, double floor, double stated ) {
@@ -1520,6 +1507,24 @@ int runMultigrid( const Perturb& perturb )
 		                      [ & ]( double x, double y ) { return 30.0 + 5.0 * std::sin( 3.0 * kPi * x / W ) * std::sin( 2.0 * kPi * y / H ) + 2.0 * std::cos( 17.0 * x / W + 9.0 * y / H ); } ) );
 		double floor = 0.0;
 		report( "water only", residualHistory( rig, 8, floor ), floor, 0.15 );
+	}
+
+	//-------------------------------------------------------------------
+	// The cold slab: solid wax, 10^5 times the water's resistivity, under the
+	// water and tilted by a cell so there is something to solve. Bilinear
+	// prolongation made this cycle diverge; the operator-dependent one is why
+	// it does not (AGENTS.md).
+	//-------------------------------------------------------------------
+	{
+		Rig rig;
+		if( !physicsRig( rig, 128, 0.3 ) )
+			return 1;
+		const ph::Grid g = rig.plugin.CurrentGrid();
+		const double W = g.nx * g.dx, slab = 0.15 * g.ny * g.dy;
+		load( rig, makeState( g, [ & ]( double x, double y ) { return slab + g.dy * ( x / W - 0.5 ) - y; },
+		                      []( double, double ) { return 22.0; } ) );
+		double floor = 0.0;
+		report( "the cold slab, a 10^5 jump", residualHistory( rig, 8, floor ), floor, 0.5 );
 	}
 
 	//-------------------------------------------------------------------
@@ -1771,59 +1776,74 @@ int runVolume( const Perturb& perturb )
 
 	//The bound. Every flux is shared bit for bit by its two cells, so the sum
 	//telescopes and only each cell's own arithmetic rounds: phi + dt * change,
-	//at most half an ulp of the result plus the product's rounding, together
-	//under 2 ulps of 1 (|phi| stays below 2, and a step's change below 1).
-	//Per cell per pass, over every cell, over every pass that writes phi (the
-	//update and each Cahn-Hilliard subcycle). A worst case: the errors do not
-	//all go one way, and the measured drift is far inside it.
+	//under 2 ulps of 1.5 a cell a pass (|phi| stays below 2). The worst case,
+	//every rounding the same way, is n = cells x passes of those -- 1.6e-2 of
+	//the wax here, which no plausible bug would exceed either. Roundings are
+	//not all one way: Higham's rule (Accuracy and Stability of Numerical
+	//Algorithms, section 2.8) takes their sum as a random walk, sqrt( n ) of
+	//them; six of those is the bound checked, and a wrong model is typically
+	//thousands.
 	const double perCell = 2.0 * ulpOf( 1.5 );
-	const double bound   = perCell * static_cast< double >( g.nx ) * g.ny * ( steps + subcycles );
+	const double passes  = static_cast< double >( g.nx ) * g.ny * ( steps + subcycles );
+	const double bound   = 6.0 * perCell * std::sqrt( passes );
 	Check( std::fabs( after - before ) <= bound,
 	       fmt( "%.1f lamp-minutes at up to %.1f mm/s, %d steps and %d Cahn-Hilliard subcycles: sum phi %.6f -> %.6f, "
-	            "drift %.2e of it (bound %.2e: 2 ulps a cell a pass)",
+	            "drift %.2e of it (bound %.2e: six random walks of 2 ulps a cell a pass)",
 	            rig.plugin.SimTime() / 60.0, 1000.0 * velocityFrom( rig.Psi(), g ).MaxSpeed(), steps, subcycles, before, after,
 	            std::fabs( after - before ) / before, bound / before ) );
 
-	//No new extrema in the heat. Bulb off and the cap off, so the only source
-	//is the glass pulling every cell towards the room, which is itself inside
-	//the range: every new T is then a convex combination of old Ts and the
-	//room's. What rounding can add per step: the update's own ulp, and T
-	//times the rounding of the discrete divergence, four differences of psi
-	//each good to an ulp at a Courant number of 1/4 -- T * eps in all. Five
-	//ulps of the hottest T a step, as a worst case.
-	double tmin = 1e30, tmax = -1e30;
-	for( int j = 0; j < end.ny; ++j )
-		for( int i = 0; i < end.nx; ++i )
-		{
-			tmin = std::min( tmin, static_cast< double >( end.at( i, j, 1 ) ) );
-			tmax = std::max( tmax, static_cast< double >( end.at( i, j, 1 ) ) );
-		}
+	//No new extrema in the heat, cell by cell and step by step. Bulb off and
+	//the cap off, so the only source is the glass pulling every cell towards
+	//the room: every new T is then a convex combination of the old Ts its
+	//stencil reads (two cells each way, for MUSCL) and the room's. One step a
+	//frame, read every frame. What rounding can add per step: the update's own
+	//ulp, and T times the rounding of the discrete divergence (four
+	//differences of psi, each good to an ulp, at a Courant number of 1/4) --
+	//five ulps of the cell's T in all.
 	const double room = deliveredAmbient( rig.plugin.GetFloatParameter( PT_AMBIENT ) );
+	//The bulb's lag runs on after its target drops: shortest lag, then a
+	//minute of lamp for it to die (e^-120).
 	rig.Set( PT_BULB, 0.0f );
+	rig.Set( PT_BULB_LAG, 0.0f );
+	rig.Set( PT_SPEED, speedParam( 30.0 ) );
+	rig.Render( 120 );
+	rig.Set( PT_SPEED, speedParam( 3.0 ) );
 	rig.plugin.SetCapForTest( false );
 	rig.plugin.KeepStepLog( true );
-	double worstHigh = -1e30, worstLow = 1e30;
-	for( int block = 0; block < 10; ++block )
+	int breaches = 0, cellsChecked = 0;
+	double worst = 0.0;
+	rig.Render( 1 );
+	Field old = readField( rig );
+	for( int frame = 0; frame < 40; ++frame )
 	{
-		rig.Render( 6 );
-		const Field s = readField( rig );
-		for( int j = 0; j < s.ny; ++j )
-			for( int i = 0; i < s.nx; ++i )
+		rig.Render( 1 );
+		const Field now = readField( rig );
+		for( int j = 0; j < now.ny; ++j )
+			for( int i = 0; i < now.nx; ++i )
 			{
-				const double t = s.at( i, j, 1 );
-				if( !std::isfinite( t ) )
-					worstHigh = 1e30;
-				worstHigh = std::max( worstHigh, t - tmax );
-				worstLow  = std::min( worstLow, t - std::min( tmin, room ) );
+				double lo = room, hi = room;
+				for( int dj = -2; dj <= 2; ++dj )
+					for( int di = -2; di <= 2; ++di )
+					{
+						const int ii = std::clamp( i + di, 0, now.nx - 1 ), jj = std::clamp( j + dj, 0, now.ny - 1 );
+						lo = std::min( lo, static_cast< double >( old.at( ii, jj, 1 ) ) );
+						hi = std::max( hi, static_cast< double >( old.at( ii, jj, 1 ) ) );
+					}
+				const double t     = now.at( i, j, 1 );
+				const double slack = 5.0 * ulpOf( t );
+				const double out   = std::isfinite( t ) ? std::max( t - hi, lo - t ) : 1e30;
+				worst = std::max( worst, out / slack );
+				if( out > slack )
+					++breaches;
+				++cellsChecked;
 			}
+		old = now;
 	}
 	rig.plugin.SetCapForTest( true );
-	const int heatSteps = static_cast< int >( rig.plugin.StepLog().size() );
-	const double slack  = 5.0 * ulpOf( tmax ) * heatSteps;
-	Check( worstHigh <= slack && worstLow >= -slack,
-	       fmt( "bulb and cap off, %d steps of convection: T stayed in [%.4f, %.4f] C to %.2e above and %.2e below "
-	            "(allowed %.2e: 5 ulps a step)",
-	            heatSteps, std::min( tmin, room ), tmax, std::max( worstHigh, 0.0 ), std::max( -worstLow, 0.0 ), slack ) );
+	Check( breaches == 0,
+	       fmt( "bulb and cap off, %zu steps of convection: every new T inside its stencil's old range and the room's "
+	            "(%d of %d cells outside by more than 5 ulps; the worst was %.2e of that)",
+	            rig.plugin.StepLog().size(), breaches, cellsChecked, worst ) );
 	return Verdict();
 }
 const Registrar kVolume( "volume", runVolume );
@@ -1926,6 +1946,193 @@ int runDiffusion( const Perturb& perturb )
 	return Verdict();
 }
 const Registrar kDiffusion( "diffusion", runDiffusion );
+
+
+//===========================================================================
+// --heat
+//===========================================================================
+int runHeat( const Perturb& perturb )
+{
+	std::printf( "\n=== heat: the lamp's mean follows the lumped law, and every joule is accounted for\n" );
+
+	//-------------------------------------------------------------------
+	// A: the lumped law. The cap's extra loss off, so every cell loses heat
+	// to the glass at the same rate; one heat capacity for both phases; flow
+	// frozen (and conduction's fluxes telescope). Then, summed over the lamp,
+	// the mean obeys C dTm/dt = P - hA ( Tm - Ta ) EXACTLY, whatever the
+	// field looks like: each step is Tm += dt ( P / C - r ( Tm - Ta ) ).
+	//-------------------------------------------------------------------
+	Rig rig;
+	if( !physicsRig( rig, 128, 0.3 ) )
+		return 1;
+	const float ambientP = ambientParam( 22.0 );
+	rig.Set( PT_AMBIENT, ambientP );
+	rig.Set( PT_GAP, gapParam( 0.001 ) );
+	rig.Set( PT_TENSION, 0.0f );
+	rig.Set( PT_BULB, bulbParam( 30.0 ) );
+	rig.Set( PT_BULB_LAG, 0.0f );
+	rig.Set( PT_SPEED, speedParam( 300.0 ) );
+	rig.plugin.SetFlowFrozenForTest( true );
+	rig.plugin.SetCapForTest( false );
+	rig.Render( 1 );
+	rig.Press( PT_RESET );
+	rig.Render( 1 );
+	rig.plugin.KeepStepLog( true );
+
+	const ph::Grid g    = rig.plugin.CurrentGrid();
+	const ph::Lamp lamp = rig.plugin.CurrentLamp();
+	const double Ta     = deliveredAmbient( ambientP );
+	const double capacity = ph::HeatCapacityTotal( lamp );
+	const double rate     = perturb.faces / 2.0 * ph::FaceLossRate( lamp.gap );
+	const double G        = perturb.faces / 2.0 * ph::FaceConductance( lamp );
+	const double tau      = capacity / G;
+	const double tauBulb  = BulbLagFromParam( 0.0f );
+	const double P        = BulbFromParam( bulbParam( 30.0 ) );
+
+	auto meanT = [ & ]() { return sumChannel( readField( rig ), 1 ) / ( g.nx * g.ny ); };
+	double recurrence = meanT();
+	const double start = recurrence;
+	const double P0    = rig.plugin.BulbPower();
+	size_t used = 0;
+	double worstDiscrete = 0.0, worstContinuous = 0.0, bound = 0.0, truncation = 0.0, maxDt = 0.0, t = 0.0;
+	double atTau = 0.0;
+	for( int frame = 0; frame < 340; ++frame )
+	{
+		rig.Render( 1 );
+		const auto& log = rig.plugin.StepLog();
+		for( ; used < log.size(); ++used )
+		{
+			recurrence += log[ used ].dt * ( log[ used ].bulbPower / capacity - rate * ( recurrence - Ta ) );
+			t += log[ used ].dt;
+			maxDt = std::max( maxDt, log[ used ].dt );
+		}
+		const double m = meanT();
+
+		//Each cell's step rounds by at most 2 ulps of its T; the mean of the
+		//errors, by at most the largest. Summed over the steps so far.
+		bound = static_cast< double >( used ) * 2.0 * ulpOf( m + 40.0 );
+		worstDiscrete = std::max( worstDiscrete, std::fabs( m - recurrence ) / bound );
+
+		//The continuous law from where the lamp is, y0 = Tm - Ta, with the
+		//bulb's lag taking P0 to P: y' = ( P + ( P0 - P ) e^(-t/tb) ) / C - y / tau,
+		//so y = a tau + B e^(-t/tb) + ( y0 - a tau - B ) e^(-t/tau).
+		const double a = P / capacity, B = ( P0 - P ) / capacity / ( 1.0 / tau - 1.0 / tauBulb );
+		const double y = a * tau + B * std::exp( -t / tauBulb ) + ( ( start - Ta ) - a * tau - B ) * std::exp( -t / tau );
+		//Forward Euler's global error: at most ( dt_max / 2 ) t max|y''|, and
+		//|y''| <= a / tauBulb + a / tau here.
+		truncation = 0.5 * maxDt * t * ( a / tauBulb + a / tau ) + bound;
+		worstContinuous = std::max( worstContinuous, std::fabs( ( m - Ta ) - y ) / truncation );
+		if( atTau == 0.0 && t >= tau )
+			atTau = ( m - start ) / ( Ta + P / G - start );
+	}
+	rig.plugin.SetFlowFrozenForTest( false );
+	const double final = meanT();
+	Check( worstDiscrete <= 1.0,
+	       fmt( "the mean against its own recurrence, %zu steps: worst %.2e of the rounding bound (2 ulps a cell a step)", used,
+	            worstDiscrete ) );
+	Check( worstContinuous <= 1.0,
+	       fmt( "the mean against Ta + P/hA ( 1 - e^(-t/tau) ), bulb lag included: worst %.2e of the Euler bound "
+	            "( dt/2 ) t max|y''| (tau = %.0f s, hA = %.3f W/K, %.2f tau run)",
+	            worstContinuous, tau, G, t / tau ) );
+	std::printf( "  from %.3f C to %.3f C; the steady state is Ta + P / hA = %.3f C; at t = tau the lamp was %.2f%% of the way "
+	             "(1 - 1/e = 63.21%%; the bulb's lag is %.1f s)\n",
+	             start, final, Ta + P / G, 100.0 * atTau, tauBulb );
+
+	//-------------------------------------------------------------------
+	// B: the cap on, and every joule accounted for, step by step: the
+	// change in the lamp's heat is the bulb's, less the glass's and the
+	// cap's on the top row's own temperatures. One step a frame.
+	//-------------------------------------------------------------------
+	rig.plugin.SetCapForTest( true );
+	rig.plugin.SetFlowFrozenForTest( true );
+	rig.Set( PT_SPEED, speedParam( 1.0 ) );
+	rig.plugin.KeepStepLog( true );
+	double worstBudget = 0.0;
+	Field before = readField( rig );
+	for( int frame = 0; frame < 60; ++frame )
+	{
+		const size_t steps0 = rig.plugin.StepLog().size();
+		rig.Render( 1 );
+		const Field after = readField( rig );
+		const auto& log   = rig.plugin.StepLog();
+		if( log.size() != steps0 + 1 )
+			continue;
+		const StepRecord& step = log.back();
+		double top = 0.0;
+		for( int i = 0; i < g.nx; ++i )
+			top += before.at( i, g.ny - 1, 1 ) - static_cast< float >( Ta );
+		const double mean0 = sumChannel( before, 1 ) / ( g.nx * g.ny ), mean1 = sumChannel( after, 1 ) / ( g.nx * g.ny );
+		const double capRate = ph::kCapLoss / ( ph::kHeatCapacity * g.dy );
+		const double expected = step.dt * ( step.bulbPower / capacity - rate * ( mean0 - Ta ) - capRate * top / ( g.nx * g.ny ) );
+		worstBudget = std::max( worstBudget, std::fabs( ( mean1 - mean0 ) - expected ) / ( 2.0 * ulpOf( mean1 + 40.0 ) ) );
+		before = after;
+	}
+	rig.plugin.SetFlowFrozenForTest( false );
+	Check( worstBudget <= 1.0,
+	       fmt( "with the cap: each step's change in heat is the bulb's less the glass's and the cap's, to %.2e of 2 ulps", worstBudget ) );
+	return Verdict();
+}
+const Registrar kHeat( "heat", runHeat );
+
+//===========================================================================
+// --bulb
+//===========================================================================
+int runBulb( const Perturb& perturb )
+{
+	std::printf( "\n=== bulb: its lag is 63%% at its time constant; a primed onset detector fires on frame 1\n" );
+	{
+		Rig rig;
+		if( !physicsRig( rig, 64, 0.3 ) )
+			return 1;
+		const float lagP = lagParam( 10.0 );
+		rig.Set( PT_BULB_LAG, lagP );
+		rig.Set( PT_SPEED, speedParam( 30.0 ) );
+		rig.plugin.SetFlowFrozenForTest( true );
+		rig.Press( PT_RESET );//the bulb from cold
+		rig.Render( 1 );
+		rig.Set( PT_BULB, bulbParam( 30.0 ) );
+		const double tau    = BulbLagFromParam( lagP );
+		const double target = BulbFromParam( bulbParam( 30.0 ) );
+		const double t0     = rig.plugin.SimTime();
+		double worst = 0.0, atTau = 0.0;
+		while( rig.plugin.SimTime() - t0 < 2.0 * tau )
+		{
+			rig.Render( 1 );
+			const double t = rig.plugin.SimTime() - t0;
+			//The one-pole is exact for any step, so the only error is double
+			//rounding: tens of steps at 1e-16 each. 1e-12 of the target.
+			const double law = perturb.lagFraction > 0.0 ? ( 1.0 - std::pow( 1.0 - perturb.lagFraction, t / tau ) )
+			                                             : 1.0 - std::exp( -t / tau );
+			worst = std::max( worst, std::fabs( rig.plugin.BulbPower() / target - law ) );
+			if( atTau == 0.0 && t >= tau - 1e-9 )
+				atTau = rig.plugin.BulbPower() / target;
+		}
+		rig.plugin.SetFlowFrozenForTest( false );
+		Check( worst <= 1e-12, fmt( "a 30 W step through a %.2f s lag: %.4f%% at tau (1 - 1/e = 63.2121%%), worst %.1e from "
+		                            "1 - e^(-t/tau) (bound 1e-12: double rounding over the steps)",
+		                            tau, 100.0 * atTau, worst ) );
+	}
+	{
+		//The fleet's bug: music already playing when the clip starts. Frame 0
+		//is loud and steady; frame 1 carries a kick. Unprimed, frame 0's whole
+		//spectrum reads as a rise, the adaptive floor latches on it, and the
+		//kick on frame 1 is not heard.
+		Rig rig;
+		if( !rig.Init( 64, 36 ) )
+			return 1;
+		rig.plugin.SetAudioPrimingForTest( !perturb.unprimed );
+		rig.feed = AudioFeed::Steady;
+		rig.beforeFrame = [ & ]( int frame ) { rig.feed = frame == 1 ? AudioFeed::Pulses : AudioFeed::Steady; };
+		rig.Render( 1 );
+		const unsigned long long before = rig.plugin.AnalyserForTest().Onsets();
+		rig.Render( 1 );
+		const bool fired = rig.plugin.AnalyserForTest().Fired() && rig.plugin.AnalyserForTest().Onsets() == before + 1;
+		Check( fired && before == 0, fmt( "steady music from frame 0, a kick on frame 1: %s on frame 1 (%llu onsets on frame 0)",
+		                                  fired ? "fired" : "did NOT fire", before ) );
+	}
+	return Verdict();
+}
+const Registrar kBulb( "bulb", runBulb );
 
 //@CHECKS@
 

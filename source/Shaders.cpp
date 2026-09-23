@@ -424,7 +424,7 @@ void main()
 )";
 
 //---------------------------------------------------------------------------
-// 5d. prolong: add the coarse correction, interpolated bilinearly, and smooth
+// 5d. prolong: add the coarse correction, interpolated by the operator, and smooth
 // once more -- in the same pass, the red-black sweep reading the corrected
 // values it needs on the fly, exactly as the smoother does its red ones.
 //---------------------------------------------------------------------------
@@ -444,17 +444,57 @@ bool onWall( ivec2 n )
 	return n.x <= 0 || n.y <= 0 || n.x >= Nodes.x - 1 || n.y >= Nodes.y - 1;
 }
 
-//psi with the coarse correction added: bilinear between coarse nodes, which
-//for a fine node is one, two or four of them.
+//The coarse correction at a fine node, interpolated by the operator rather
+//than bilinearly. Between two coarse nodes the correction is taken
+//flux-continuous through the fine node -- a_W ( e - e_W ) = a_E ( e_E - e) --
+//so across a jump in the wax's resistivity it bends where the flux says it
+//must. Bilinear interpolation does not, and on a cold slab (solid wax 10^5
+//times stiffer than the water on it) the V-cycle it made DIVERGED, eight
+//times a cycle (AGENTS.md). A node between four coarse nodes is the same rule
+//applied to its four edge-midpoint neighbours. (Alcouffe, Brandt, Dendy &
+//Painter, 1981, for five-point stencils.)
+float coarseAt( ivec2 h )
+{
+	return texelFetch( Correction, h, 0 ).x;
+}
+float alongX( ivec2 n )//n.x odd, n.y even
+{
+	ivec2 h  = n / 2;
+	float aW = texelFetch( Coef, n - ivec2( 1, 0 ), 0 ).x;
+	float aE = texelFetch( Coef, n, 0 ).x;
+	return ( aW * coarseAt( h ) + aE * coarseAt( h + ivec2( 1, 0 ) ) ) / ( aW + aE );
+}
+float alongY( ivec2 n )//n.x even, n.y odd
+{
+	ivec2 h  = n / 2;
+	float aS = texelFetch( Coef, n - ivec2( 0, 1 ), 0 ).y;
+	float aN = texelFetch( Coef, n, 0 ).y;
+	return ( aS * coarseAt( h ) + aN * coarseAt( h + ivec2( 0, 1 ) ) ) / ( aS + aN );
+}
+float interpolated( ivec2 n )
+{
+	ivec2 odd = n - 2 * ( n / 2 );
+	if( odd.x == 0 && odd.y == 0 )
+		return coarseAt( n / 2 );
+	if( odd.y == 0 )
+		return alongX( n );
+	if( odd.x == 0 )
+		return alongY( n );
+	float aW = texelFetch( Coef, n - ivec2( 1, 0 ), 0 ).x;
+	float aE = texelFetch( Coef, n, 0 ).x;
+	float aS = texelFetch( Coef, n - ivec2( 0, 1 ), 0 ).y;
+	float aN = texelFetch( Coef, n, 0 ).y;
+	return ( aW * alongY( n - ivec2( 1, 0 ) ) + aE * alongY( n + ivec2( 1, 0 ) ) + aS * alongX( n - ivec2( 0, 1 ) )
+	         + aN * alongX( n + ivec2( 0, 1 ) ) )
+	       / ( aW + aE + aS + aN );
+}
+
+//psi with the coarse correction added.
 float corrected( ivec2 n )
 {
 	if( onWall( n ) )
 		return 0.0;
-	ivec2 h   = n / 2;
-	ivec2 odd = n - 2 * h;
-	float e   = 0.25 * ( texelFetch( Correction, h, 0 ).x + texelFetch( Correction, h + ivec2( odd.x, 0 ), 0 ).x
-	                   + texelFetch( Correction, h + ivec2( 0, odd.y ), 0 ).x + texelFetch( Correction, h + odd, 0 ).x );
-	return texelFetch( Psi, n, 0 ).x + Weight * e;
+	return texelFetch( Psi, n, 0 ).x + Weight * interpolated( n );
 }
 
 float relax( ivec2 n, float east, float west, float north, float south )
