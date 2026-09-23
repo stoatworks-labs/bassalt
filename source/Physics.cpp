@@ -82,7 +82,7 @@ Grid ChooseGrid( double width, double height, int cellsUp )
 	grid.ny = std::max( cellsUp, 8 );
 
 	//The fewest halvings that bring the coarsest grid inside the coarsest
-	//shader's 16 x 16 nodes, the width rounded to a whole number of coarsest
+	//shader's 8 x 8 nodes, the width rounded to a whole number of coarsest
 	//cells each time. More levels than that only add passes, and a pass is
 	//what costs here.
 	const double across = grid.ny * width / height;

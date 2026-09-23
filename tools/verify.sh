@@ -225,6 +225,18 @@ grep -q "versionFallback = \"v$declared\"" source/StoatworksAbout.h \
 echo "ok   $identifier, $package, v$version -- plist, CMakeLists and About agree"
 
 #---------------------------------------------------------------------------
+step "Parameter names"
+#---------------------------------------------------------------------------
+# The FFGL name field is char[ 16 ] and not null-terminated: a longer name is
+# cut short by the host without a word, and Resolume finds parameters by name.
+# "Liquid Tint_Green" went out as "Liquid Tint_Gree" before this check.
+long_names="$( "$BUILD/bstest" --list | awk 'NR > 1 { name = ""; for( i = 2; i < NF - 1; ++i ) name = name ( i > 2 ? " " : "" ) $i; if( length( name ) > 16 ) print "   " name " (" length( name ) ")" }' )"
+[[ -z "$long_names" ]] || { printf '%s\n' "$long_names"; fail "a parameter name is longer than 16 characters"; }
+dupes="$( "$BUILD/bstest" --list | awk 'NR > 1 { name = ""; for( i = 2; i < NF - 1; ++i ) name = name ( i > 2 ? " " : "" ) $i; print name }' | sort | uniq -d )"
+[[ -z "$dupes" ]] || fail "duplicate parameter names: $dupes"
+echo "ok   every name 16 characters or fewer, and unique"
+
+#---------------------------------------------------------------------------
 step "Code signature"
 #---------------------------------------------------------------------------
 # Ad hoc, which is what a local build gets. The release workflow signs and
@@ -262,7 +274,7 @@ fi
 step "Checks"
 #---------------------------------------------------------------------------
 # Every claim the README makes, in the order the README makes them.
-for check in still volume crossover darcy multigrid diffusion rt heat bulb glass state; do
+for check in still volume crossover darcy multigrid diffusion rt heat bulb glass lens state; do
 	"$BUILD/bstest" --$check || fail "bstest --$check"
 done
 

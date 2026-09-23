@@ -857,6 +857,7 @@ struct Perturb
 	double lagFraction     = 0.0;  ///< --bulb: nonzero expects this fraction at tau
 	bool unprimed          = false;///< --bulb: the onset detector not primed
 	double index           = 0.0;  ///< --glass: nonzero expects this water index
+	bool wholePenalty      = false;///< --lens: the inflation pinned wherever there is any water
 };
 
 /// Replace one exact substring of a shipped shader, which must occur exactly
@@ -1494,13 +1495,16 @@ int runMultigrid( const Perturb& perturb )
 		{
 			trace += fmt( " %.1e", h[ k ] );
 			//A cycle counts once its starting residual is well clear of the
-			//float floor; below that the residual is rounding, not error.
+			//float floor; below that the residual is rounding, not error. And
+			//not the first: local Fourier analysis gives the ASYMPTOTIC rate, a
+			//cycle acting on error the last one smoothed, and the first cycle
+			//from a zero guess acts on the right-hand side's spectrum instead.
 			const double before = k == 0 ? 1.0 : h[ k - 1 ];
-			if( before > 30.0 * floor )
+			if( k > 0 && before > 30.0 * floor )
 				worst = std::max( worst, h[ k ] / before );
 		}
 		std::printf( "  %s, relative residual per cycle:%s (float floor %.1e)\n", what, trace.c_str(), floor );
-		Check( worst <= stated, fmt( "%s: worst factor per cycle %.3f (stated %.2f)", what, worst, stated ) );
+		Check( worst <= stated, fmt( "%s: worst factor per cycle after the first %.3f (stated %.2f)", what, worst, stated ) );
 	};
 
 	//-------------------------------------------------------------------
@@ -2064,7 +2068,7 @@ int runHeat( const Perturb& perturb )
 	            worstDiscrete ) );
 	Check( worstContinuous <= 1.0,
 	       fmt( "the mean against Ta + P/hA ( 1 - e^(-t/tau) ), bulb lag included: worst %.2e of the Euler bound "
-	            "( dt/2 ) t max|y''| (tau = %.0f s, hA = %.3f W/K, %.2f tau run)",
+	            "( dt/2 ) int |y''| dt (tau = %.0f s, hA = %.3f W/K, %.2f tau run)",
 	            worstContinuous, tau, G, t / tau ) );
 	std::printf( "  from %.3f C to %.3f C; the steady state is Ta + P / hA = %.3f C; at t = tau the lamp was %.2f%% of the way "
 	             "(1 - 1/e = 63.21%%; the bulb's lag is %.1f s)\n",
@@ -2527,6 +2531,56 @@ int runRT( const Perturb& perturb )
 const Registrar kRT( "rt", runRT );
 
 //@CHECKS@
+//===========================================================================
+// --lens: the one invented step, checked for what it claims.
+//===========================================================================
+int runLens( const Perturb& perturb )
+{
+	std::printf( "\n=== lens: a round blob's inflated thickness is a round lens's, 2 sqrt( R^2 - r^2 )\n" );
+	ShippedShaders restoreShaders;
+	if( perturb.wholePenalty
+	    && !overrideShader( ShaderId::Inflate, "Penalty * max( 1.0 - 2.0 * wax, 0.0 ) * max( 1.0 - 2.0 * wax, 0.0 )",
+	                        "Penalty * ( 1.0 - wax ) * ( 1.0 - wax )" ) )
+		return 1;
+	Rig rig;
+	if( !physicsRig( rig, 128, 0.3 ) )
+		return 1;
+	rig.Set( PT_SPEED, 0.0f );
+	rig.plugin.SetFlowFrozenForTest( true );
+	rig.Render( 1 );
+	const ph::Grid g = rig.plugin.CurrentGrid();
+	const double cx = 0.5 * g.nx * g.dx, cy = 0.5 * g.ny * g.dy, xi = ph::InterfaceWidth( g );
+	for( double R : { 0.03, 0.06 } )
+	{
+		load( rig, makeState( g, [ & ]( double x, double y ) { return R - std::hypot( x - cx, y - cy ); },
+		                      []( double, double ) { return 56.0; } ) );
+		//Warm-started a cycle a frame; from nothing, sixty frames.
+		rig.Render( 60 );
+		const Floats h = rig.Thickness();
+		auto at = [ & ]( double x, double y ) {
+			//Bilinear between nodes, as the composite reads it.
+			const double fx = x / g.dx, fy = y / g.dy;
+			const int i = static_cast< int >( fx ), j = static_cast< int >( fy );
+			const double tx = fx - i, ty = fy - j;
+			auto n = [ & ]( int a, int b ) { return static_cast< double >( h[ static_cast< size_t >( b ) * ( g.nx + 1 ) + a ] ); };
+			return ( 1 - ty ) * ( ( 1 - tx ) * n( i, j ) + tx * n( i + 1, j ) ) + ty * ( ( 1 - tx ) * n( i, j + 1 ) + tx * n( i + 1, j + 1 ) );
+		};
+		//-lap h = 1 in a disc, h = 0 on its edge: h = ( R^2 - r^2 ) / 4, so the
+		//lens 4 sqrt( h ) is 2 sqrt( R^2 - r^2 ), a sphere's chord. Allowance:
+		//the interface's middle is where the edge is, to delta <= xi / 2 either
+		//way, which moves h by R delta / 2 everywhere: 2 R delta / ( R^2 - r^2 )
+		//of it -- xi / R at the centre and 4/3 of that at R/2.
+		const double centre = at( cx, cy ) / ( R * R / 4.0 ), half = at( cx + 0.5 * R, cy ) / ( 3.0 * R * R / 16.0 );
+		Check( std::fabs( centre - 1.0 ) <= xi / R && std::fabs( half - 1.0 ) <= 4.0 / 3.0 * xi / R,
+		       fmt( "R = %.0f mm: thickness %.2f mm at the centre (a sphere's %.2f), %.2f mm at R/2 (%.2f) -- off %.1f%% and %.1f%%, "
+		            "allowance xi / R = %.1f%% (4/3 of it at R/2)",
+		            R * 1000.0, 4000.0 * std::sqrt( at( cx, cy ) ), 2000.0 * R, 4000.0 * std::sqrt( at( cx + 0.5 * R, cy ) ),
+		            2000.0 * R * std::sqrt( 0.75 ), 100.0 * std::fabs( centre - 1.0 ), 100.0 * std::fabs( half - 1.0 ), 100.0 * xi / R ) );
+	}
+	rig.plugin.SetFlowFrozenForTest( false );
+	return Verdict();
+}
+const Registrar kLens( "lens", runLens );
 
 //===========================================================================
 // --negative
@@ -2561,6 +2615,7 @@ int runNegative( const Perturb& )
 	add( "bulb", "expect the lag half done at tau instead of 1 - 1/e", []( Perturb& p ) { p.lagFraction = 0.5; } );
 	add( "bulb", "the onset detector not primed on its first frame", []( Perturb& p ) { p.unprimed = true; } );
 	add( "glass", "expect glass's index, n = 1.5, not water's", []( Perturb& p ) { p.index = 1.5; } );
+	add( "lens", "the inflation pinned to zero wherever there is any water at all", []( Perturb& p ) { p.wholePenalty = true; } );
 
 	int unfalsifiable = 0;
 	for( const Case& c : cases )
@@ -2599,7 +2654,7 @@ double timeFrames( Rig& rig, int frames )
 
 int runBench( const Perturb& )
 {
-	std::printf( "\n=== bench: ms per frame, warm lamp, after 60 frames of warm-up\n" );
+	std::printf( "\n=== bench: ms per frame on the warm lamp, after 60 frames; best and median of five batches of 60\n" );
 	struct Size
 	{
 		int w, h;
@@ -2607,11 +2662,12 @@ int runBench( const Perturb& )
 		int cells;
 		double speed;
 		int view;
+		int clip;
 	};
 	const Size sizes[] = {
-		{ 1280, 720, "720p", 128, 2.0, 0 },  { 1920, 1080, "1080p", 128, 2.0, 0 }, { 3840, 2160, "4K", 128, 2.0, 0 },
-		{ 1920, 1080, "1080p", 64, 2.0, 0 }, { 1920, 1080, "1080p", 256, 2.0, 0 }, { 1920, 1080, "1080p", 128, 30.0, 0 },
-		{ 1920, 1080, "1080p", 128, 300.0, 0 }, { 1920, 1080, "1080p", 128, 2.0, 2 },
+		{ 1280, 720, "720p", 128, 3.0, 0, 0 },    { 1920, 1080, "1080p", 128, 3.0, 0, 0 }, { 3840, 2160, "4K", 128, 3.0, 0, 0 },
+		{ 1920, 1080, "1080p", 128, 3.0, 0, 1 },  { 1920, 1080, "1080p", 64, 3.0, 0, 0 },  { 1920, 1080, "1080p", 256, 3.0, 0, 0 },
+		{ 1920, 1080, "1080p", 128, 30.0, 0, 0 }, { 1920, 1080, "1080p", 128, 300.0, 0, 0 },
 	};
 	for( const Size& size : sizes )
 	{
@@ -2621,21 +2677,26 @@ int runBench( const Perturb& )
 		rig.Set( PT_DETAIL, detailParam( size.cells ) );
 		rig.Set( PT_SPEED, speedParam( size.speed ) );
 		rig.Set( PT_VIEW, static_cast< float >( size.view ) );
+		rig.Set( PT_CLIP, static_cast< float >( size.clip ) );
 		rig.Render( 60 );
-		int substeps = 0;
+		std::vector< double > batches;
 		const double t0 = rig.plugin.SimTime();
-		const double ms = timeFrames( rig, 60 );
-		const double lamp = ( rig.plugin.SimTime() - t0 ) / 1.0;
-		substeps = rig.plugin.LastSubsteps();
+		int substeps    = 0;
+		for( int b = 0; b < 5; ++b )
+		{
+			batches.push_back( timeFrames( rig, 60 ) );
+			substeps = std::max( substeps, rig.plugin.LastSubsteps() );
+		}
+		const double lamp = ( rig.plugin.SimTime() - t0 ) / ( 5.0 * 60.0 / 60.0 );
+		std::sort( batches.begin(), batches.end() );
 		const ph::Grid& g = rig.plugin.CurrentGrid();
-		std::printf( "  %-6s Detail %-3d Speed %5.0fx %-5s %6.2f ms/frame (%4.1f%% of 60 fps; grid %dx%d, %d levels, %d substeps, "
-		             "lamp ran %.0fx)\n",
-		             size.name, size.cells, size.speed, size.view == 0 ? "Lamp" : "Wax", ms, 100.0 * ms / ( 1000.0 / 60.0 ), g.nx, g.ny,
-		             g.levels, substeps, lamp );
+		std::printf( "  %-6s Detail %-3d Speed %4.0fx %-6s %6.2f ms/frame best, %6.2f median (%4.1f%% of 60 fps; grid %dx%d, %d levels, "
+		             "up to %d substeps; the lamp ran %.0fx)\n",
+		             size.name, size.cells, size.speed, size.clip ? "Dyed" : "Behind", batches.front(), batches[ 2 ],
+		             100.0 * batches.front() / ( 1000.0 / 60.0 ), g.nx, g.ny, g.levels, substeps, lamp );
 	}
 	return 0;
 }
-
 const Registrar kBench( "bench", runBench );
 
 /// --pipe and --film. Raw RGBA, top row first, one frame at a time, on the

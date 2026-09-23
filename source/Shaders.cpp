@@ -376,9 +376,11 @@ void main()
 //---------------------------------------------------------------------------
 // 5c. coarsest: solve the whole coarsest grid in every fragment.
 //
-// At most 16 x 16 nodes. Each fragment runs the same lexicographic SOR on the
+// At most 8 x 8 nodes. Each fragment runs the same lexicographic SOR on the
 // same data in the same order, so every fragment holds the same answer, and
-// writes out its own node. One pass instead of a hundred.
+// writes out its own node. One pass instead of a hundred. Kept that small on
+// purpose: the local array is private memory, and at 16 x 16 with 60 sweeps
+// this one pass cost a millisecond (AGENTS.md).
 //---------------------------------------------------------------------------
 const char* const kCoarsestShader = R"(#version 410 core
 
@@ -390,7 +392,7 @@ uniform float Omega;
 
 out vec4 fragColor;
 
-float x[ 256 ];
+float x[ 64 ];//kCoarsestMax squared
 
 void main()
 {
@@ -401,7 +403,7 @@ void main()
 		return;
 	}
 
-	for( int k = 0; k < 256; ++k )
+	for( int k = 0; k < 64; ++k )
 		x[ k ] = 0.0;
 
 	for( int sweep = 0; sweep < Sweeps; ++sweep )
@@ -413,13 +415,13 @@ void main()
 				float aW = texelFetch( Coef, m - ivec2( 1, 0 ), 0 ).x;
 				float aS = texelFetch( Coef, m - ivec2( 0, 1 ), 0 ).y;
 				float r  = texelFetch( Rhs, m, 0 ).x;
-				int k    = J * 16 + I;
-				float gs = ( r + c.x * x[ k + 1 ] + aW * x[ k - 1 ] + c.y * x[ k + 16 ] + aS * x[ k - 16 ] )
+				int k    = J * 8 + I;
+				float gs = ( r + c.x * x[ k + 1 ] + aW * x[ k - 1 ] + c.y * x[ k + 8 ] + aS * x[ k - 8 ] )
 				           / ( c.x + aW + c.y + aS + c.z );
 				x[ k ] += Omega * ( gs - x[ k ] );
 			}
 
-	fragColor = vec4( x[ n.y * 16 + n.x ], 0.0, 0.0, 0.0 );
+	fragColor = vec4( x[ n.y * 8 + n.x ], 0.0, 0.0, 0.0 );
 }
 )";
 
@@ -900,7 +902,11 @@ void main()
 	ivec2 n   = ivec2( gl_FragCoord.xy );
 	float wax = 0.25 * ( phiAt( n ) + phiAt( n - ivec2( 1, 0 ) ) + phiAt( n - ivec2( 0, 1 ) ) + phiAt( n - ivec2( 1, 1 ) ) );
 	if( Mode == 0 )
-		fragColor = vec4( Spacing.y / Spacing.x, Spacing.x / Spacing.y, Penalty * ( 1.0 - wax ) * ( 1.0 - wax ), 0.0 );
+		//Pinned on the water's side of phi = 1/2 only, so the lens's edge is
+		//the interface's middle. Pinned wherever there was ANY water, the
+		//first version held h to zero two cells inside the interface and a
+		//round blob came out a fifth too narrow.
+		fragColor = vec4( Spacing.y / Spacing.x, Spacing.x / Spacing.y, Penalty * max( 1.0 - 2.0 * wax, 0.0 ) * max( 1.0 - 2.0 * wax, 0.0 ), 0.0 );
 	else
 		fragColor = vec4( wax * Spacing.x * Spacing.y, 0.0, 0.0, 0.0 );
 }

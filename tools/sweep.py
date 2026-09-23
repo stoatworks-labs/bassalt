@@ -13,10 +13,10 @@ only ever exercise the settings they set themselves.
 Some of Bassalt's controls do nothing until something happens. Bass, Bass Band
 and Kick need audio playing (`--beat`), and Bass Band and Bulb Lag need Bass
 turned up as well: the lag only shows when the bulb's target moves, and on a
-steady bulb it never does. Pour Threshold needs a pour (`--pour 5`), and Wax
-Amount a Reset (`--reset 5`), which is the only time it is read. The table
-supplies exactly that and nothing more; it was checked by emptying it, and
-all six go dead without it.
+steady bulb it never does. Pour Threshold needs a pour (`--pour 5`). Wax Amount
+is read only on a Reset -- but the lamp's own first frame is one, so it needs
+nothing. The table supplies exactly that and nothing more; it was checked by
+running each entry without it, and all five go dead.
 
 Everything else is live on the base render: the plugin's own defaults, a
 warm lamp already convecting.
@@ -48,7 +48,6 @@ CONTEXT = {
     "Kick": BEAT,
     "Bulb Lag": BASS,
     "Pour Threshold": ["--pour", "5"],
-    "Wax Amount": ["--reset", "5"],
 }
 
 # The values every non-option parameter is swept across. The awkward numbers

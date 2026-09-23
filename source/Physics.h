@@ -142,9 +142,9 @@ constexpr int kMaxSubsteps = 32;
 constexpr int kCyclesPerStep = 1;
 
 /// Sweeps of the in-register SOR solve on the coarsest grid, and its
-/// over-relaxation (near the optimum 2 / ( 1 + sin( pi / 14 ) ) for the
+/// over-relaxation (near the optimum 2 / ( 1 + sin( pi / 8 ) ) for the
 /// widest coarsest grid).
-constexpr int kCoarsestSweeps = 60;
+constexpr int kCoarsestSweeps = 40;
 constexpr double kCoarsestOmega = 1.6;
 
 /// The margin on last frame's fastest face when choosing this frame's step:
@@ -153,7 +153,7 @@ constexpr double kSpeedMargin = 1.5;
 
 /// The coarsest grid's largest node count along either axis; the coarsest
 /// shader holds the whole grid in a local array this big squared.
-constexpr int kCoarsestMax = 16;
+constexpr int kCoarsestMax = 8;
 
 //---------------------------------------------------------------------------
 // The lamp as the controls describe it, in SI units.
@@ -251,7 +251,7 @@ struct Grid
 
 /// Cells up the height are `cellsUp`; across, the frame's aspect times that,
 /// rounded to a multiple of 2^(levels - 1) so every level halves exactly. The
-/// halving stops at the first level whose nodes fit 16 x 16, which the
+/// halving stops at the first level whose nodes fit 8 x 8, which the
 /// coarsest shader solves whole. The cells are not quite square (the rounding
 /// is at most half a coarsest cell), so the frame maps onto the domain
 /// exactly and nothing is stretched.

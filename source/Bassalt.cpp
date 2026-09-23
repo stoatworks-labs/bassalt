@@ -250,8 +250,8 @@ BassaltPlugin::BassaltPlugin()
 	SetParamInfof( PT_WAX_G, "Wax Colour_Green", FF_TYPE_GREEN );
 	SetParamInfof( PT_WAX_B, "Wax Colour_Blue", FF_TYPE_BLUE );
 	SetParamInfof( PT_TINT_R, "Liquid Tint", FF_TYPE_RED );
-	SetParamInfof( PT_TINT_G, "Liquid Tint_Green", FF_TYPE_GREEN );
-	SetParamInfof( PT_TINT_B, "Liquid Tint_Blue", FF_TYPE_BLUE );
+	SetParamInfof( PT_TINT_G, "Tint_Green", FF_TYPE_GREEN );
+	SetParamInfof( PT_TINT_B, "Tint_Blue", FF_TYPE_BLUE );
 	SetParamInfof( PT_GLOW, "Glow", FF_TYPE_STANDARD );
 	SetOptionParamInfo( PT_GLASS, "Glass", static_cast< int >( Glass::Count ), params[ PT_GLASS ] );
 	for( int i = 0; i < static_cast< int >( Glass::Count ); ++i )
