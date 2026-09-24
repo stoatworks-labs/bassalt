@@ -159,7 +159,8 @@ comes from the offline harness, which drives the real plugin class headlessly.
 host does and finds `SW Bassalt` / `BS01` / effect, 38 parameters; nothing
 else has run it. It has only been measured on macOS (Apple Silicon). The
 Windows x64 DLL is built by MSVC in CI (it compiled first time) and nothing
-has run it. There is no OpenFX port, no browser demo and no factory presets.
+has run it. There is no OpenFX port and no factory presets; the browser demo
+(below) is the plugin's shaders, not the plugin.
 The macOS downloads are signed and notarised (`spctl`: Notarized Developer
 ID); the Windows ones are unsigned.
 
@@ -210,6 +211,26 @@ What is **not** verified, and is the honest limit of this release:
   Cylinder's outermost few per cent band where the rays graze.
 - **Resolume's FFT bins** are assumed, as everywhere in the fleet; Bass and Kick
   have not met real music.
+
+## Browser demo
+
+**[bassalt-demo.stoatworks-labs.com](https://bassalt-demo.stoatworks-labs.com/)**
+runs all fourteen of the plugin's passes in WebGL2, on generated clips, with
+its own controls. It is **not the plugin**, and it says so: the shaders are
+this repository's text, unedited (`demo/tools/check_shaders.py`, run by
+`tools/verify.sh`, fails on a drift), but the orchestration around them (the
+pass order, the multigrid's V-cycle, the substep limits, the events, the
+controls' conversions) is a hand port to JavaScript that only a reader checks.
+Three differences matter: **there is no audio**, so the Audio group is absent
+and the bulb runs on the Bulb control alone (exactly what the plugin does on
+silence); **`precise` is dropped** (GLSL ES 3.00 has none), so a browser may
+reassociate the sums that keep a level lamp still and the wax conserved to the
+bit; and the fastest-face read-back cannot wait on its fence, so the step
+sequence depends on the GPU's timing. The page lists every difference.
+
+Deploy from the repo root with `cf-run npx wrangler deploy` (`wrangler.toml`,
+a static-assets Worker; no build step). `demo/vendor/` is the shared kit from
+`stoatworks-backend/resolume-demo`, copied in and never edited here.
 
 ## Build
 

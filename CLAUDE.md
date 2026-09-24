@@ -73,10 +73,23 @@ anything marked `precise`.
   `StoatworksAbout.h` (generated; `sync-about.py --only bassalt --apply`).
 
 ## Not done yet
-- Never loaded into Resolume (oxbow probe only). No OFX port, browser demo,
-  factory presets or rocket mask. The Windows DLL is built by CI, never run.
+- Never loaded into Resolume (oxbow probe only). No OFX port, factory presets
+  or rocket mask. The Windows DLL is built by CI, never run.
 - `ATTRIBUTIONS.md` is still a hand copy: bassalt is in names.json but not in
   sync-attributions' component lists.
+
+## Browser demo
+- `demo/` is the page at bassalt-demo.stoatworks-labs.com: the fourteen shaders
+  copied UNEDITED into `demo/plugin.js`, the orchestration of `Bassalt.cpp`,
+  `Physics.cpp` and `Controls.cpp` ported to JS by hand. Change a shader, copy it
+  across (`demo/tools/check_shaders.py`, in verify.sh, fails on any drift; the
+  one escape is \` for the backticks in an update-pass comment). Change a
+  constant, a conversion or the pass order, change `plugin.js` too -- nothing
+  checks that but a reader.
+- Local: `python3 -m http.server 8793` in `demo/`. Deploy: `cf-run npx wrangler
+  deploy` from the repo root. Verify by content (the `<title>`), not status.
+- `demo/vendor/` is the shared kit (stoatworks-backend/resolume-demo); never edit.
+- AGENTS.md "Browser demo" has the decisions and the gaps.
 
 ## Diagnostics
 

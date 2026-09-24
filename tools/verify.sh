@@ -155,6 +155,19 @@ step "Shaders"
 shaders_compile || fail "a shader does not compile"
 
 #---------------------------------------------------------------------------
+step "Demo shaders"
+#---------------------------------------------------------------------------
+# demo/plugin.js carries a second copy of every shader for the browser demo.
+# Two copies drift invisibly from both sides, so the copy is compared with the
+# C++ character for character, and a drift fails here.
+if out=$( python3 demo/tools/check_shaders.py 2>&1 ); then
+	echo "ok   $( printf '%s\n' "$out" | tail -1 )"
+else
+	printf '%s\n' "$out" | sed 's/^/   /'
+	fail "demo/plugin.js has drifted from source/Shaders.cpp"
+fi
+
+#---------------------------------------------------------------------------
 step "Submodule"
 #---------------------------------------------------------------------------
 if [[ ! -f external/ffgl/CMakeLists.txt ]]; then

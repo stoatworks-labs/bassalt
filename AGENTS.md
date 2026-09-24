@@ -371,6 +371,62 @@ Assumed, or not done:
 - **The dye** is not conserved and relaxes when stretched: it is a picture, not
   a physical quantity.
 
+## Browser demo
+
+`demo/` is the page at bassalt-demo.stoatworks-labs.com, built 2026-09-24 on the
+shared kit (`stoatworks-backend/resolume-demo`, vendored by hand into
+`demo/vendor/`, never edited here). What runs, and what does not:
+
+- **The shaders run for real**: all fourteen passes plus the vertex shader,
+  copied unedited into `demo/plugin.js`. `demo/tools/check_shaders.py`
+  (galvo's shape, called from `verify.sh`) compares each with the C++ character
+  for character, joins the update pass's two raw strings the way the compiler
+  does, and refuses any backslash but the one escape a template literal needs
+  (a backslash before a backtick, for the backticks round `precise` in an
+  update-pass comment).
+- **The orchestration is a port that only a reader checks**: `Physics.cpp`
+  (constants, T*, ChooseGrid, the three step limits, the bulb's one-pole),
+  `Controls.cpp` (each result rounded to float) and `BassaltPlugin`'s pass
+  sequence -- ensureBuffers, the events, Simulate()'s substeps and Cahn-Hilliard
+  subcycles, the V-cycle recursion, the inflation, the composite's uniforms.
+- **Formats are the plugin's**: RGBA32F cells and coefficients, R32F levels.
+  WebGL2 needs EXT_color_buffer_float to render to them (`needFloat`) and
+  OES_texture_float_linear to filter them; without the latter a float texture
+  with LINEAR filtering is incomplete and even texelFetch reads zero, so the page
+  throws a GLError naming it rather than showing an empty lamp.
+- **`precise` is dropped** by the kit's port() (ES 3.00 has none). This plugin
+  relies on it (the traps above), so the page says a browser may reassociate the
+  circulation and fluxes: a level slab need not stay exactly still, and wax need
+  not be conserved to the bit.
+- **No audio.** Decided: the whole Audio group (the FFT buffer, Bass, Bass Band,
+  Kick) is ABSENT, as on readout, rosette and cadence, rather than present and
+  dead. The removal is exact: on silence the analyser's Bass() is 0 and it never
+  fires, so BulbTarget() is Bulb alone and no Kick is queued. The bulb runs on the
+  Bulb control at its own default (30 W); nothing invented drives it. Said in the
+  banner, the disclosure and here.
+- **Warm, Reset, Pour** are booleans the renderer releases on the frame it takes
+  the press (readout's precedent: the kit has no FF_TYPE_EVENT).
+- **The speed read-back differs.** The plugin waits on its fence so every run
+  takes the same steps; WebGL2 allows no client wait. The page collects the
+  speed only once `getSyncParameter` says SIGNALED and makes no new request while
+  one is in flight, so a GPU running behind sizes its steps from the last speed
+  that arrived. The update shader's rescue (scale all of psi) is unchanged.
+  Chrome trap, measured: re-using the pixel-pack buffer's storage warns "READ-usage
+  buffer was written, then fenced, but written again before being read back" on
+  EVERY frame even with the read in between, until the context stops reporting
+  WebGL errors; `bufferData` fresh storage before each request silences it.
+- **Clip = Behind** by default with the kit's geometry card first (the nearest
+  thing to the harness's card); Lights on black is the clip to Pour from. The
+  composite writes alpha 1, so there is no backdrop picker.
+- **Detail stays at the plugin's default, 128.** The default lamp (224 x 128,
+  2 substeps a frame at 3x) measured ~50 fps in Chrome on this Mac's Apple
+  Silicon GPU; at 30x it takes ~16 substeps a frame. Headless SwiftShader runs
+  it, slowly (Detail 64 at 300x: 4 lamp-minutes in four wall minutes, blobs
+  visible, no console errors).
+- **The About block is absent**, as on every demo in the suite.
+- A line under the canvas reports lamp time, grid, substeps a frame, the bulb and
+  T*, and says when the 32-substep cap makes the lamp run slower than Speed.
+
 ## Open design questions
 
 - A semi-implicit capillary term would lift the step limit, allow clean
