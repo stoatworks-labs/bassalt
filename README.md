@@ -160,10 +160,24 @@ boiled at 124 C, every drop of wax floated to the cap, and a Cylinder sent
 still trades against Bulb at any aspect: on the default 30 W a 0.16 m lamp
 (Lamp Height 0.2) boils and a 1 m one (1.0) never melts.
 
+**The wax lasts.** In v0.1.0 the wax slowly dissolved into the water: over
+the first hour of lamp the water clouded to about 10% wax, and at 16:9 by
+about 70 lamp-minutes (45 at 9:16) there were no blobs left at all, just an
+evenly cloudy lamp that never separated again. An hour of lamp is two minutes
+of wall time at 30x and twenty at the default 3x. The cause was numerical: moving the wax a
+cell at a time smeared its edge into the water, a little each step, faster than
+the model of the interface could take it back. Main pushes the smeared edge
+back onto the interface as the wax moves, and does nothing to a lamp at rest.
+Two hours of lamp at 30x now keep 94% of the wax's area as blobs (89% at 9:16),
+with the water under 1% wax; six hours look the same. The difference shows
+from the first moving frame, at every aspect, 16:9 included.
+
 ## Status
 
-**v0.1.0, released 2026-09-23, and honestly early.** Main has one fix since,
-not yet released: frames that are not 16:9 (*Any aspect*, above).
+**v0.1.0, released 2026-09-23, and honestly early.** Main has two fixes since,
+neither released: frames that are not 16:9 (*Any aspect*, above), and wax
+that dissolved into the water after about an hour of lamp (*The wax lasts*,
+above).
 
 It has **never been loaded into Resolume** on either platform. Everything here
 comes from the offline harness, which drives the real plugin class headlessly.
@@ -181,29 +195,32 @@ What is measured, on this machine:
 | | |
 | --- | --- |
 | a lamp at rest | a cold level slab: the flow is **exactly 0** for 3 lamp-minutes, every row identical to the bit |
-| spurious currents | a round blob of neutral density: **1.5e-5 m/s** at most (the capillary scale is 8.3e-4), falling **107x** over 20 minutes |
-| wax conserved | 7.4 lamp-minutes of convection: drift **6e-7** of the wax (bound 1.2e-5) |
+| spurious currents | a round blob of neutral density: **1.5e-5 m/s** at most (the capillary scale is 8.3e-4), falling **105x** over 20 minutes |
+| wax conserved | 6.8 lamp-minutes of convection: drift **5e-7** of the wax (bound 1.1e-5) |
 | no new extrema | every cell, every step, inside its stencil's old range: **0** of 287,000 |
+| the wax lasts | two hours of lamp at 30x: blobs throughout, **94%** of the wax's area kept (**89%** at 9:16), the water's median under **0.006** wax (0.011); v0.1.0's lost half its blobs by 15 minutes and all of them by ~70 |
 | the crossover | a blob stops at T* to **4e-6 K** at three salts; T* moves **-11.293 K** per 1% salt, as the laws say |
 | the flow solve | GPU against an exact CPU solve of the same system: **1e-9** relative, inside the residual's own bound |
 | the Hele-Shaw speed | a blob at four viscosity ratios, extrapolated to a sharp interface: **0.08-0.45%** from U = K_in K_out drho g / ( K_in + K_out ) |
-| multigrid | **0.13** a cycle (textbook two-grid 0.074), **0.13** across a 10^5 jump, **0.25** in a running lamp; one cycle a step leaves **7e-4** of the flow |
+| multigrid | **0.13** a cycle (textbook two-grid 0.074), **0.13** across a 10^5 jump, **0.20** in a running lamp; one cycle a step leaves **8e-4** of the flow |
 | diffusion | a hot spot's variance against the scheme's own law: **1e-8 m^2** in 2.3e-4 |
-| Rayleigh-Taylor | four modes grow or decay as they should, the rates within **0.8-2.4%** of the law once the diffuse interface's own response is divided out; cutoff **0.7%** from sqrt( drho g / sigma ) |
+| Rayleigh-Taylor | four modes grow or decay as they should, the rates within **1.4-5.7%** of the law once the diffuse interface's own response is divided out; cutoff **1.4%** from sqrt( drho g / sigma ) |
 | heat | the lamp's mean follows the lumped law to **0.6** of Euler's bound; every step's joules add up, to **4e-3** of its 2-ulp bound |
 | the bulb | **63.2121%** at its time constant; a primed onset detector fires on frame 1 |
 | the glass | Flat is the identity to **3e-8**; Cylinder is Snell's law to **1e-5** at two 16:9 rasters and **4e-5** at 9:16 |
 | any aspect | Warm puts a 9:16, 4:5, 1:1 or 21:9 lamp at the 16:9 lamp's temperature to **0.04 ulp**; from cold, a 9:16 lamp warms on the 16:9 curve to **3e-4** of the rounding bound |
 | the lens | a round blob is a sphere's chord to **2.6-3.7%** at the centre (the interface's width) |
 | GL state | everything a host could care about, pack buffer included, as it went in |
-| negative controls | **16** deliberately wrong models, **all 16** detected; one character of shipped GLSL changed, **caught** |
+| negative controls | **17** deliberately wrong models, **all 17** detected; one character of shipped GLSL changed, **caught** |
 | dead controls | **30** parameters, all live |
 
 Render cost (`bstest --bench`, the warm lamp at the default 3x, best of five
 batches, on a machine shared with other jobs): **1.8-2.7 ms/frame at 720p,
 2.0-2.7 at 1080p, 2.2-3.0 at 4K**. Detail sets the grid, not the raster, so 4K
-costs little more than 720p; Detail 64 is 1.5 ms. The cost is in the steps: at
-30x it is 8-11 ms, and Detail 256 is 14 ms at 3x.
+costs little more than 720p; Detail 64 is 1.0-1.5 ms. The cost is in the
+steps: at 30x it is 8-11 ms, and Detail 256 is 10-14 ms at 3x. The fix for the
+dissolving wax costs nothing measurable at 3x (1.75 ms at 720p before and
+after, back to back on an idle machine) and about 2% at 30x.
 
 What is **not** verified, and is the honest limit of this release:
 
@@ -216,12 +233,16 @@ What is **not** verified, and is the honest limit of this release:
 - **Surface tension stops at 10 mN/m.** A lamp's wax, with its surfactants, is
   a few; clean paraffin on clean water is 50, and at that the explicit flow step
   would need a hundred substeps a frame.
-- **Speed 300x is really about 70x** once the lamp convects: the step is limited
-  by the capillary time and there are at most 32 a frame.
+- **Speed 300x is really about 70x** (67x since the fix) once the lamp
+  convects: the step is limited by the capillary time and there are at most 32
+  a frame.
 - **No latent heat.** The wax stiffens below its melting point; it does not sit
   at it.
 - **The lens rims streak** a little, where a lens's slope is steepest, and the
   Cylinder's outermost few per cent band where the rays graze.
+- **The wax's edge is held by a numerical device.** The fix for the dissolving
+  wax is a correction to the transport, tuned on this lamp, not physics. It
+  leaves faint specks of wax in the water that only View = Wax shows.
 - **Resolume's FFT bins** are assumed, as everywhere in the fleet; Bass and Kick
   have not met real music.
 

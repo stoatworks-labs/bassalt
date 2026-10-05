@@ -22,6 +22,8 @@
                        neutral blob's spurious currents are bounded and fall
         --volume       wax is conserved through convection; heat makes no new
                        extrema
+        --persist      two hours of lamp at 30x, at 16:9 and 9:16, and the wax
+                       is still blobs with clear water between them
         --crossover    a blob rises iff T > T*, and T* moves with Salt as the
                        linear density laws say
         --darcy        an isolated blob moves at the Hele-Shaw speed, and the
@@ -44,6 +46,7 @@
         --bench        time a frame at 720p through 4K
 
     Development aids: --probe [N] prints the lamp's state every N frames;
+    --shed measures the wax one rising blob leaves behind per centimetre;
     --dump DIR, with a check that calls dumpViews(), writes its fields.
 
     ----------------------------------------------------------- rasters
@@ -865,6 +868,7 @@ struct Perturb
 	bool unsharedWorld     = false;///< --glass: expects the world Refraction metres behind at every aspect (v0.1.0)
 	bool wholePenalty      = false;///< --lens: the inflation pinned wherever there is any water
 	bool unshared          = false;///< --aspect: expects every frame to get the whole bulb, whatever its width (v0.1.0)
+	bool noSharpening      = false;///< --persist: the interface's sharpening off in the shader (v0.1.0)
 };
 
 /// Replace one exact substring of a shipped shader, which must occur exactly
@@ -1777,7 +1781,7 @@ int runVolume( const Perturb& perturb )
 {
 	std::printf( "\n=== volume: wax is conserved through convection; heat makes no new extrema\n" );
 	ShippedShaders restoreShaders;
-	if( perturb.nonConservative && !overrideShader( ShaderId::Update, "vec2 left   = fluxX( i - 1, j, uL );", "vec2 left   = fluxX( i - 1, j, uR );" ) )
+	if( perturb.nonConservative && !overrideShader( ShaderId::Update, "vec2 left   = fluxX( i - 1, j, uL, gamma );", "vec2 left   = fluxX( i - 1, j, uR, gamma );" ) )
 		return 1;
 	if( perturb.unlimited
 	    && !overrideShader( ShaderId::Update, "return p > 0.0 ? 2.0 * p / ( back + ahead ) : 0.0;", "return 0.5 * ( back + ahead );" ) )
@@ -1872,6 +1876,106 @@ int runVolume( const Perturb& perturb )
 	return Verdict();
 }
 const Registrar kVolume( "volume", runVolume );
+
+//===========================================================================
+// --persist
+//===========================================================================
+int runPersist( const Perturb& perturb )
+{
+	std::printf( "\n=== persist: two hours of lamp at 30x, and the wax is still wax -- blobs, with clear water between them\n" );
+	ShippedShaders restoreShaders;
+	if( perturb.noSharpening
+	    && !overrideShader( ShaderId::Update, "precise float gamma = Sharpening * min( texelFetch( Fastest, ivec2( 0 ), 0 ).x, SpeedCap );",
+	                        "precise float gamma = 0.0;" ) )
+		return 1;
+
+	//The default lamp, warm, at 30x, at the aspects it lasted longest and
+	//shortest in v0.1.0: there the advection smeared the interface's water side
+	//into the flow faster than Cahn-Hilliard took it back, the water hazed, and
+	//by ~70 lamp-minutes at 16:9 (~45 at 9:16) phi was a uniform 0.15 -- the
+	//Wax Amount, outside the spinodal, so it never separated again (AGENTS.md).
+	//Every five lamp-minutes, three things a lamp needs:
+	//  - phi max > 0.9: somewhere the wax is still wax (the haze was 0.15);
+	//  - phi min < 0.05: somewhere the water is still water (v0.1.0's had
+	//    hazed past that in 23 lamp-minutes);
+	//  - at least half the area that was wax (phi > 1/2) at the start still is.
+	//The first lapse ends the run, so the negative control costs minutes.
+	const double minutes      = 120.0;
+	const int sizes[][ 2 ]    = { { 320, 180 }, { 180, 320 } };
+	const char* const names[] = { "16:9", "9:16" };
+	for( int k = 0; k < 2; ++k )
+	{
+		Rig rig;
+		if( !rig.Init( sizes[ k ][ 0 ], sizes[ k ][ 1 ] ) )
+			return 1;
+		rig.Set( PT_SPEED, speedParam( 30.0 ) );
+		rig.Render( 1 );
+		const ph::Grid g = rig.plugin.CurrentGrid();
+
+		struct Look
+		{
+			double phiMin, phiMax, waxArea, median;
+		};
+		auto look = [ & ]() {
+			const Field s = readField( rig );
+			Look l { 1e30, -1e30, 0.0, 0.0 };
+			std::vector< float > water;
+			for( int j = 0; j < s.ny; ++j )
+				for( int i = 0; i < s.nx; ++i )
+				{
+					const double p = s.at( i, j, 0 );
+					if( !std::isfinite( p ) )
+						return Look { INFINITY, -INFINITY, 0.0, INFINITY };
+					l.phiMin = std::min( l.phiMin, p );
+					l.phiMax = std::max( l.phiMax, p );
+					if( p > 0.5 )
+						l.waxArea += 1.0;
+					else
+						water.push_back( static_cast< float >( p ) );
+				}
+			l.waxArea /= static_cast< double >( s.nx ) * s.ny;
+			if( !water.empty() )
+			{
+				std::nth_element( water.begin(), water.begin() + water.size() / 2, water.end() );
+				l.median = water[ water.size() / 2 ];
+			}
+			return l;
+		};
+
+		const Look start = look();
+		Look worst { -1e30, 1e30, 1e30, -1e30 }, now = start;
+		double lapsed = -1.0;
+		while( rig.plugin.SimTime() < minutes * 60.0 )
+		{
+			const double mark = rig.plugin.SimTime() + 300.0;
+			while( rig.plugin.SimTime() < mark )
+				if( !rig.Render( 1 ) )
+					return 1;
+			now           = look();
+			worst.phiMin  = std::max( worst.phiMin, now.phiMin );
+			worst.phiMax  = std::min( worst.phiMax, now.phiMax );
+			worst.waxArea = std::min( worst.waxArea, now.waxArea );
+			worst.median  = std::max( worst.median, now.median );
+			if( !( now.phiMax > 0.9 && now.phiMin < 0.05 && now.waxArea >= 0.5 * start.waxArea ) )
+			{
+				lapsed = rig.plugin.SimTime() / 60.0;
+				break;
+			}
+		}
+		const std::string when = lapsed < 0.0 ? fmt( "for all %.0f lamp-minutes", rig.plugin.SimTime() / 60.0 )
+		                                      : fmt( "UNTIL %.0f lamp-minutes", lapsed );
+		Check( lapsed < 0.0,
+		       fmt( "%-4s grid %dx%d, %s: phi max never below %.3f (bound 0.9), phi min never above %.4f (bound 0.05), "
+		            "the wax's area never below %.0f%% of its start (bound 50%%); the water's median phi at most %.4f, "
+		            "%.4f at the end",
+		            names[ k ], g.nx, g.ny, when.c_str(), worst.phiMax, worst.phiMin, 100.0 * worst.waxArea / start.waxArea,
+		            worst.median, now.median ) );
+		if( lapsed >= 0.0 )
+			break;
+	}
+	return Verdict();
+}
+const Registrar kPersist( "persist", runPersist );
 
 //===========================================================================
 // --diffusion
@@ -2755,6 +2859,8 @@ int runNegative( const Perturb& )
 	add( "glass", "expect the world Refraction metres behind at every aspect, as v0.1.0 had it",
 	     []( Perturb& p ) { p.unsharedWorld = true; } );
 	add( "lens", "the inflation pinned to zero wherever there is any water at all", []( Perturb& p ) { p.wholePenalty = true; } );
+	add( "persist", "the interface's sharpening off, as v0.1.0 had it: the wax dissolves into the water",
+	     []( Perturb& p ) { p.noSharpening = true; } );
 	add( "aspect", "expect every frame to get the whole bulb, as v0.1.0 gave it: a 9:16 lamp at 124 C",
 	     []( Perturb& p ) { p.unshared = true; } );
 
@@ -2947,6 +3053,94 @@ int runPipe( int width, int height, const std::string& scriptPath, int filmFrame
 }
 
 //---------------------------------------------------------------------------
+// --shed: one blob rising through still water, and the wax it leaves behind. A
+// development aid (AGENTS.md, "The wax dissolved"). The lamp is at one
+// temperature, T* + 5 K with T* = 30 C, so nothing moves but the blob, which
+// starts 3 cm off the base, 3 cm in radius; --set applies after that (Detail,
+// Wax Viscosity, Surface Tension). Each lamp-second: how far it has risen, and
+// how much of its wax lies more than four cells from any cell above 1/2.
+//---------------------------------------------------------------------------
+int runShed( const std::vector< std::string >& settings )
+{
+	Rig rig;
+	if( !physicsRig( rig, 128, 0.3 ) )
+		return 1;
+	double salt       = 0.0;
+	const float saltP = saltForCrossover( 30.0, salt );
+	const float ambP  = ambientParam( ph::Crossover( salt ) + 5.0 );
+	rig.Set( PT_SALT, saltP );
+	rig.Set( PT_AMBIENT, ambP );
+	rig.Set( PT_MELTING_POINT, meltParam( 35.0 ) );
+	for( const std::string& setting : settings )
+	{
+		std::string error;
+		if( !applySetting( rig.plugin, setting, error ) )
+		{
+			std::fprintf( stderr, "--set %s: %s\n", setting.c_str(), error.c_str() );
+			return 2;
+		}
+	}
+	rig.Render( 1 );
+	const ph::Grid g = rig.plugin.CurrentGrid();
+	const double T   = deliveredAmbient( ambP );
+	const double R = 0.03, cx = 0.5 * g.nx * g.dx, cy0 = R + 0.03;
+	load( rig, makeState( g, [ & ]( double x, double y ) { return R - std::hypot( x - cx, y - cy0 ); },
+	                      [ & ]( double, double ) { return T; } ) );
+	rig.Render( 1 );
+
+	//The blob's height (the wax-weighted centre of the cells above 1/2), and
+	//the wax more than four cells from any of them, as a share of all of it.
+	auto measure = [ & ]( double& height, double& left ) {
+		const Field s = readField( rig );
+		double wy = 0.0, w = 0.0, all = 0.0;
+		left = 0.0;
+		for( int j = 0; j < s.ny; ++j )
+			for( int i = 0; i < s.nx; ++i )
+			{
+				const double p = s.at( i, j, 0 );
+				all += p;
+				if( p >= 0.5 )
+				{
+					wy += p * ( j + 0.5 ) * g.dy;
+					w += p;
+					continue;
+				}
+				bool near = false;
+				for( int dj = -4; dj <= 4 && !near; ++dj )
+					for( int di = -4; di <= 4 && !near; ++di )
+						near = s.at( std::clamp( i + di, 0, s.nx - 1 ), std::clamp( j + dj, 0, s.ny - 1 ), 0 ) >= 0.5f;
+				if( !near )
+					left += p;
+			}
+		height = w > 0.0 ? wy / w : 0.0;
+		left /= all;
+	};
+	double height = 0.0, left = 0.0, startLeft = 0.0;
+	measure( height, startLeft );
+	std::printf( "shed: one blob, R %.0f mm, rising through water at T* + 5 K; grid %dx%d; %.4f of its wax beyond four cells at the start\n",
+	             R * 1000.0, g.nx, g.ny, startLeft );
+	double riseFrom = -1.0, leftFrom = 0.0;
+	while( height + R < 0.3 - 0.03 && rig.plugin.SimTime() < 60.0 )
+	{
+		rig.Render( 60 );
+		measure( height, left );
+		const double rise = height - cy0;
+		if( riseFrom < 0.0 && rise >= 0.01 )
+		{
+			riseFrom = rise;
+			leftFrom = left;
+		}
+		std::printf( "  t %5.1f s  risen %5.1f mm  |u| %5.2f mm/s  left behind %.5f of the wax\n", rig.plugin.SimTime(), 1000.0 * rise,
+		             1000.0 * velocityFrom( rig.Psi(), g ).MaxSpeed(), left );
+	}
+	if( riseFrom >= 0.0 && height - cy0 > riseFrom )
+		std::printf( "  from 1 cm up: %.3f%% of its wax left behind per centimetre risen\n",
+		             100.0 * ( left - leftFrom ) / ( 100.0 * ( height - cy0 - riseFrom ) ) );
+	return 0;
+}
+
+
+//---------------------------------------------------------------------------
 // --probe: what the lamp is doing, every N frames. A development aid.
 //---------------------------------------------------------------------------
 int runProbe( int width, int height, int frames, const std::vector< std::string >& settings, int every )
@@ -2975,6 +3169,7 @@ int runProbe( int width, int height, int frames, const std::vector< std::string 
 			continue;
 		const Field s = readField( rig );
 		double tmin = 1e9, tmax = -1e9, pmin = 1e9, pmax = -1e9;
+		std::vector< float > water;//phi below 1/2: its median is the haze
 		for( int j = 0; j < s.ny; ++j )
 			for( int i = 0; i < s.nx; ++i )
 			{
@@ -2982,15 +3177,24 @@ int runProbe( int width, int height, int frames, const std::vector< std::string 
 				tmax = std::max( tmax, static_cast< double >( s.at( i, j, 1 ) ) );
 				pmin = std::min( pmin, static_cast< double >( s.at( i, j, 0 ) ) );
 				pmax = std::max( pmax, static_cast< double >( s.at( i, j, 0 ) ) );
+				if( s.at( i, j, 0 ) < 0.5f )
+					water.push_back( s.at( i, j, 0 ) );
 			}
+		const double waxArea = 1.0 - static_cast< double >( water.size() ) / ( static_cast< double >( s.nx ) * s.ny );
+		double haze = 0.0;
+		if( !water.empty() )
+		{
+			std::nth_element( water.begin(), water.begin() + water.size() / 2, water.end() );
+			haze = water[ water.size() / 2 ];
+		}
 		const Velocity vel = velocityFrom( rig.Psi(), rig.plugin.CurrentGrid() );
 		const auto& log = rig.plugin.StepLog();
 		if( !log.empty() )
 			std::printf( "  last step: dt %.4f s, speed used %.3f mm/s\n", log.back().dt, log.back().speed * 1000.0 );
-		std::printf( "frame %4d  t=%8.1f s  substeps %2d  short %.3f  wax %.2f  phi [%.4f %.4f]  T [%.2f %.2f] mean %.3f  "
-		             "|u| %.2f mm/s  bulb %.1f W  %.2f ms\n",
+		std::printf( "frame %4d  t=%8.1f s  substeps %2d  short %.3f  wax %.2f  phi [%.4f %.4f]  water %.4f  wax area %.3f  "
+		             "T [%.2f %.2f] mean %.3f  |u| %.2f mm/s  bulb %.1f W  %.2f ms\n",
 		             f, rig.plugin.SimTime(), rig.plugin.LastSubsteps(), rig.plugin.LastShortfall(),
-		             sumChannel( s, 0 ) / ( s.nx * s.ny ), pmin, pmax, tmin, tmax, sumChannel( s, 1 ) / ( s.nx * s.ny ),
+		             sumChannel( s, 0 ) / ( s.nx * s.ny ), pmin, pmax, haze, waxArea, tmin, tmax, sumChannel( s, 1 ) / ( s.nx * s.ny ),
 		             vel.MaxSpeed() * 1000.0, rig.plugin.BulbPower(), ms );
 	}
 	return 0;
@@ -3033,8 +3237,9 @@ int main( int argc, char** argv )
 				"  --pipe            raw RGBA frames on stdin, raw RGBA frames on stdout\n"
 				"  --film N          N frames of the card, raw RGBA frames on stdout\n"
 				"  --script PATH     parameter cues for --pipe/--film: 'frame Name value'\n"
-				"  --probe [N]       print the lamp's state every N frames\n\n"
-				"  --still --volume --crossover --darcy --multigrid --diffusion --rt --heat\n"
+				"  --probe [N]       print the lamp's state every N frames\n"
+				"  --shed            one blob rising through still water: the wax it leaves behind\n\n"
+				"  --still --volume --persist --crossover --darcy --multigrid --diffusion --rt --heat\n"
 				"  --bulb --glass --aspect --lens --state --negative --mutate --bench\n"
 				"  --dump DIR        with a check: write the fields it sets up (development aid)\n" );
 			return 0;
@@ -3068,6 +3273,8 @@ int main( int argc, char** argv )
 			mode = "list";
 		else if( argument == "--dump" && hasNext )
 			g_dumpDir = argv[ ++i ];
+		else if( argument == "--shed" )
+			mode = "shed";
 		else if( argument == "--probe" )
 		{
 			mode = "probe";
@@ -3126,6 +3333,8 @@ int main( int argc, char** argv )
 		result = runPipe( width, height, scriptPath, filmFrames, beat, settings );
 	else if( mode == "probe" )
 		result = runProbe( width, height, frames, settings, every );
+	else if( mode == "shed" )
+		result = runShed( settings );
 	else if( !mode.empty() )
 		result = RunNamed( mode );
 	else

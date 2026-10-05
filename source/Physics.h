@@ -123,6 +123,26 @@ constexpr double kInterfaceSpeed = 5.0e-4;
 /// 1 can still relax.
 constexpr double kMobilityFloor = 0.02;
 
+/// The interface's sharpening, a conservative flux in the update pass that
+/// pushes a smeared profile back to Cahn-Hilliard's own and vanishes on it
+/// (Shaders.cpp; AGENTS.md, "The wax dissolved"). Its speed is this times the
+/// step's fastest face, so it is nothing at rest. Without it the advection
+/// smeared the interface's water side into the flow faster than Cahn-Hilliard
+/// took it back, and in about an hour of lamp the wax had dissolved into the
+/// water (`bstest --persist`). MEASURED, not derived: a blob rising through
+/// still water left 0.28% of its wax behind per centimetre without it, 0.06%
+/// with it (0.015% at 1, which leaves the step half the margin when the flow's
+/// rescue engages); the lamp held its blobs for six hours at 0.25 and at 0.5.
+constexpr double kSharpening = 0.5;
+
+/// How much flatter than an interface a profile may be and still be pulled
+/// back to one. More than 1, or the equilibrium profile is no longer left
+/// alone; but in a nearly uniform haze the flux is anti-diffusion of
+/// Gamma xi ( Reach - 1 ), which gathers the haze into specks, so no more than
+/// it needs: 2 left 0.063% of the rising blob's wax behind per centimetre to
+/// 4's 0.057%, with a third of the specks' drive.
+constexpr double kSharpeningReach = 2.0;
+
 /// The advective Courant number on the fastest face. MUSCL with a limiter
 /// whose slope ratio reaches 2, under forward Euler, keeps every cell a convex
 /// combination of its neighbours at a summed inflow Courant number of 1/2, and

@@ -536,8 +536,9 @@ void main()
 )";
 
 //---------------------------------------------------------------------------
-// 7. update: one substep of phi and T's transport, T's heat, and the dye.
-// Cahn-Hilliard follows, subcycled, in kInterfaceShader.
+// 7. update: one substep of phi and T's transport, the interface's
+// sharpening, T's heat, and the dye. Cahn-Hilliard follows, subcycled, in
+// kInterfaceShader.
 //
 // Every flux is a function of its face alone, and the two cells that share a
 // face call it with the same arguments in the same order -- so they agree to
@@ -570,6 +571,9 @@ uniform float ClipPower;     //W, when the clip is all white
 uniform vec2 MaxUV;
 uniform float UVRelax;       //1/s, for dye stretched past 4:1
 uniform float SpeedCap;      //m/s: the face speed at the step's Courant number
+uniform float Xi;            //the interface's width, m
+uniform float Sharpening;    //the sharpening's speed over the fastest face's
+uniform float Reach;         //a profile this many times flatter than the interface is haze
 
 out vec4 fragColor;
 
@@ -634,25 +638,72 @@ vec2 diffuse( ivec2 a, ivec2 b, float h )
 	return vec2( 0.0, heat );
 }
 
+//The wax's logit, ln( phi / ( 1 - phi ) ): on Cahn-Hilliard's own profile,
+//1 / ( 1 + exp( -d / xi ) ), it is d / xi, the distance to the interface in
+//widths -- a straight line through an interface, however it lies on the grid.
+float logit( float phi )
+{
+	float p          = clamp( phi, 1e-6, 1.0 - 1e-6 );
+	precise float l  = log( p / ( 1.0 - p ) );
+	return l;
+}
+
+//The interface's sharpening through the face from cell a to cell b, h apart,
+//with t the step along the face and ht its spacing. A conservative flux
+//(Chiu & Lin 2011, the conservative diffuse interface):
+//
+//    -Gamma ( xi grad phi - phi ( 1 - phi ) n ),   n = grad logit / |grad logit|
+//
+//On Cahn-Hilliard's equilibrium profile xi grad phi is phi ( 1 - phi ) n, so
+//it vanishes there (to its difference quotients, a couple of per cent of
+//either term on a one-cell interface): it does not fight Cahn-Hilliard, and it
+//puts no energy back into an interface at rest, which superbee did everywhere
+//(AGENTS.md). Where the profile has been smeared flatter, it carries the wax
+//back up the slope at up to Gamma. Without it the advection's numerical
+//diffusion smears the interface's water side into the flow, which carries it
+//off as haze that Cahn-Hilliard does not take back, until the wax has
+//dissolved (AGENTS.md, "The wax dissolved").
+//Gamma follows the fastest face, so a lamp at rest is not sharpened at all.
+//A profile more than Reach times flatter than an interface is haze, not an
+//interface, and n shrinks with its slope there. In a nearly uniform haze the
+//flux is then anti-diffusion of Gamma xi ( Reach - 1 ), and gathers what haze
+//there is into faint specks: Reach is no larger than it needs to be.
+float sharpen( ivec2 a, ivec2 b, ivec2 t, float h, float ht, float gamma )
+{
+	float pa             = stateAt( a ).x;
+	float pb             = stateAt( b ).x;
+	precise float la     = logit( pa );
+	precise float lb     = logit( pb );
+	precise float along  = ( lb - la ) / h;
+	precise float across = ( ( logit( stateAt( a + t ).x ) - logit( stateAt( a - t ).x ) )
+	                         + ( logit( stateAt( b + t ).x ) - logit( stateAt( b - t ).x ) ) ) / ( 4.0 * ht );
+	precise float slope  = max( sqrt( along * along + across * across ), 1.0 / ( Reach * Xi ) );
+	precise float face   = 1.0 / ( 1.0 + exp( -0.5 * ( la + lb ) ) );
+	precise float flux   = -gamma * ( Xi * ( pb - pa ) / h - face * ( 1.0 - face ) * along / slope );
+	return flux;
+}
+
 //Everything through the x-face between cells (i, j) and (i+1, j), speed w.
-vec2 fluxX( int i, int j, float w )
+vec2 fluxX( int i, int j, float w, float gamma )
 {
 	vec4 q0 = stateAt( ivec2( i - 1, j ) );
 	vec4 q1 = stateAt( ivec2( i, j ) );
 	vec4 q2 = stateAt( ivec2( i + 1, j ) );
 	vec4 q3 = stateAt( ivec2( i + 2, j ) );
-	precise vec2 flux = advect( w, q0, q1, q2, q3 ) + diffuse( ivec2( i, j ), ivec2( i + 1, j ), Spacing.x );
+	precise vec2 flux = advect( w, q0, q1, q2, q3 ) + diffuse( ivec2( i, j ), ivec2( i + 1, j ), Spacing.x )
+	                    + vec2( sharpen( ivec2( i, j ), ivec2( i + 1, j ), ivec2( 0, 1 ), Spacing.x, Spacing.y, gamma ), 0.0 );
 	return flux;
 }
 
 //Everything through the y-face between cells (i, j) and (i, j+1), speed w.
-vec2 fluxY( int i, int j, float w )
+vec2 fluxY( int i, int j, float w, float gamma )
 {
 	vec4 q0 = stateAt( ivec2( i, j - 1 ) );
 	vec4 q1 = stateAt( ivec2( i, j ) );
 	vec4 q2 = stateAt( ivec2( i, j + 1 ) );
 	vec4 q3 = stateAt( ivec2( i, j + 2 ) );
-	precise vec2 flux = advect( w, q0, q1, q2, q3 ) + diffuse( ivec2( i, j ), ivec2( i, j + 1 ), Spacing.y );
+	precise vec2 flux = advect( w, q0, q1, q2, q3 ) + diffuse( ivec2( i, j ), ivec2( i, j + 1 ), Spacing.y )
+	                    + vec2( sharpen( ivec2( i, j ), ivec2( i, j + 1 ), ivec2( 1, 0 ), Spacing.y, Spacing.x, gamma ), 0.0 );
 	return flux;
 }
 
@@ -687,10 +738,15 @@ void main()
 	precise float vB = scale * ( -( psiAt( i + 1, j ) - psiAt( i, j ) ) / Spacing.x );
 	precise float vT = scale * ( -( psiAt( i + 1, j + 1 ) - psiAt( i, j + 1 ) ) / Spacing.x );
 
-	precise vec2 left   = fluxX( i - 1, j, uL );
-	precise vec2 right  = fluxX( i, j, uR );
-	precise vec2 bottom = fluxY( i, j - 1, vB );
-	precise vec2 top    = fluxY( i, j, vT );
+	//The sharpening's speed: Sharpening times the fastest face's, held where
+	//the step's Courant number holds the flow (a quarter of a cell a step), so
+	//it moves wax at most Sharpening of that.
+	precise float gamma = Sharpening * min( texelFetch( Fastest, ivec2( 0 ), 0 ).x, SpeedCap );
+
+	precise vec2 left   = fluxX( i - 1, j, uL, gamma );
+	precise vec2 right  = fluxX( i, j, uR, gamma );
+	precise vec2 bottom = fluxY( i, j - 1, vB, gamma );
+	precise vec2 top    = fluxY( i, j, vT, gamma );
 
 	precise vec2 change = -( ( right - left ) / Spacing.x + ( top - bottom ) / Spacing.y );
 

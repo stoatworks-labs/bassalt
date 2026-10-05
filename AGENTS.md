@@ -80,8 +80,9 @@ One V-cycle per substep, warm-started from the last psi.
 
 Measured (`--multigrid`): 0.127 a cycle on constant coefficients (local Fourier
 analysis gives 0.074 for two grids; stated 0.15), 0.129 across the cold slab's
-10^5 jump, 0.247 through a convecting lamp; one warm-started cycle leaves psi
-7.4e-4 of the flow's energy from the exact solve, against the 1% a step needs.
+10^5 jump, 0.199 through a convecting lamp (0.247 before the sharpening); one
+warm-started cycle leaves psi 8.1e-4 of the flow's energy from the exact solve,
+against the 1% a step needs.
 
 ## The wax: Cahn-Hilliard, and why its mobility is what it is
 
@@ -96,6 +97,96 @@ force is never at equilibrium and the spurious currents never die. At D = dx x
 ten times that they fall monotonically. Ten times makes Cahn-Hilliard's
 explicit limit the stiffest in the lamp, so it has its own pass, subcycled
 inside each flow step: two passes a subcycle where a flow step is about thirty.
+
+## The wax dissolved, and the interface's sharpening
+
+**v0.1.0's wax dissolved into the water.** Found 2026-10-05, fixed the same
+day. At 16:9 and Speed 30x the water's phi rose from 0 to about 0.10 over the
+first hour of lamp; between ~65 and ~73 lamp-minutes the last blobs went, and
+from then on phi was a uniform 0.15 -- the Wax Amount, which lies outside f's
+spinodal (0.21 to 0.79), so Cahn-Hilliard never separates it again. Nothing
+for Behind's lenses or Dyed to show. Narrow frames went sooner (~45 minutes at
+9:16), and so did coarse grids (Detail 64 by 15 minutes; Detail 192 still had
+blobs at 82). Speed 3x followed 30x minute for minute: the steps are the same
+size either way (the capillary limit or the Courant number), so the frame count
+does not matter. Nor does the raster: 320x180 and 960x540 ran bit-identical
+lamps. Every check then ran minutes of lamp; this took an hour.
+
+**What it was**, measured with `bstest --probe` (which now prints the water's
+median phi and the wax's area) and `bstest --shed` (one blob, R = 3 cm,
+rising through water held at T* + 5 K, so nothing else moves):
+
+- **The advection's numerical diffusion.** The rising blob left a wake of wax
+  at phi ~1e-3 to 1e-2 behind it: 0.28% of its wax per centimetre risen at
+  Detail 128, 0.52% at 64, 0.14% at 256 -- first order in the cell. Within 15%
+  of that at 1.8 and 3.6 mm/s and without surface tension, and no less (0.50%)
+  with the wax as runny as the water, so it is not the tangential slip a
+  permeability jump makes. The phi limiter moved it: upwind
+  0.94%, van Leer 0.28%, MC 0.25%, superbee 0.15%, van Leer on the logit 0.22%.
+- **Not Cahn-Hilliard's speed.** Its mobility from 0.03x to 10x left the wake
+  unchanged. At phi ~1e-2 the wake is already about the diffuse interface's own
+  solubility beside a blob that size (Gibbs-Thomson: xi / 6R for this f, 0.013
+  at R = 13 cells), so there is almost nothing to pull it back, and the
+  degenerate mobility there is a twenty-fifth of the interface's. The flow
+  spreads it lamp-wide, and once the haze is everywhere the way back to a blob is
+  a diffusion across centimetres.
+- **In the whole lamp the mobility mattered too** (presumably filaments
+  thinner than the interface smearing before they can pinch off; not
+  separated): 0.3x lost the
+  blobs by 40 minutes; 3x and 10x held them at a water median of 0.07 and 0.045,
+  with 61% and 75% of the wax's area left after 92 minutes, 10x at ten
+  Cahn-Hilliard subcycles a step. A mobility floor of 1 (bulk diffusion, so the
+  haze sits at the smallest droplets' solubility) held at 0.10. Superbee held at
+  0.07, with phi reaching 1.16.
+
+So the suspicion in the bug report was half right: the advection's numerical
+diffusion is the source; Cahn-Hilliard not out-running it is not the reason it
+stays, because Cahn-Hilliard has no force on wax that dilute.
+
+**The fix: a conservative sharpening flux in the update pass** (Chiu & Lin
+2011, the conservative diffuse interface), on phi alone:
+
+    phi_t + div( u phi ) = div( Gamma ( xi grad phi - phi ( 1 - phi ) n ) )
+    n = grad psi / max( |grad psi|, 1 / ( Reach xi ) ),   psi = ln( phi / ( 1 - phi ) )
+
+- **It vanishes on Cahn-Hilliard's equilibrium profile**, 1 / (1 + e^(-d/xi)),
+  where xi grad phi is phi (1 - phi) n exactly (to the difference quotients, a
+  couple of per cent of either term on a one-cell interface). So it does not
+  fight Cahn-Hilliard or the Korteweg balance; it only carries wax that has
+  been smeared down a flatter slope back up it. Superbee steepened every
+  profile, at equilibrium or not, and that is what made its spurious currents
+  permanent.
+- **psi, the logit, is d / xi on that profile**: a straight line through an
+  interface however it lies on the grid, so its gradient is a good normal, and
+  the face value of phi (1 - phi) is taken from psi's midpoint.
+- **Gamma = kSharpening x the step's fastest face**, held to the Courant cap.
+  A lamp at rest is untouched to the bit (the flux is -0, and x + -0 is x):
+  `--still`'s slab is exactly what it was, and its blob's currents fell 105x
+  (107x before). The flux's diffusion number is about 1/8 a direction at most.
+  `--rt`'s rates moved too, inside their allowances: 1.4-5.7% from the law
+  (0.8-2.4% before), the cutoff 1.4% (0.7%).
+- **Reach** caps how flat a profile can be and still count as an interface.
+  It must exceed 1 or the equilibrium profile is no longer left alone; above 1,
+  a nearly uniform haze sees anti-diffusion of Gamma xi (Reach - 1) -- the logit
+  of a small phi turns its noise into steep slopes -- and the haze gathers into
+  grid-aligned specks. 2 keeps a third of 4's drive and nearly all of the cure.
+- **Conservative and bit-identical across each face** like everything else in
+  the update: a function of its face alone, every operation `precise`.
+
+Measured with it (kSharpening 0.5, Reach 2): the rising blob leaves 0.06% a
+centimetre (gain 1: 0.015%). The lamp at 30x for **six hours**: at 16:9 the
+wax's area 93-97% of its start and the water's median 0.003 to 0.007; at 9:16,
+89-95% and 0.005 to 0.013; phi inside [0, 1] throughout. Two hours at the
+default 3x: 95-97%, 0.004 to 0.007. Gains 0.25 and 0.5 at Reach 4 held six
+hours as well (a prototype of the same flux). `--persist` is the check (two
+hours, both aspects, with v0.1.0's transport as its negative control). Gating the flux off where no cell nearby is above 0.1 or 0.3 gave back
+most of the leak (0.16%, 0.24%): the far tail is exactly what has to come back.
+
+**What it leaves.** The specks: faint, grid-aligned, at phi ~0.01 to 0.1 in the
+water, visible only in View = Wax (Lamp and Dyed both cut at phi = 1/2, and the
+lens is pinned there). Floor the logit at 1e-3 and they are unchanged; at 1e-2
+the leak doubles. **16:9 output differs from v0.1.0** from the first frame
+anything moves, by design: the bug was at 16:9.
 
 ## The heat
 
@@ -274,6 +365,13 @@ a hot spot's variance grows 2 kappa dt / (1 - r dt) a step, not 2 kappa dt:
 goes, and the offsets moved. It reported an unmatched quote that `bash -n` never
 found.
 
+**A check of minutes cannot see a bug of an hour.** Every check ran a few
+lamp-minutes, and the wax took an hour to dissolve (above). `--persist` runs
+two hours at 30x, about two minutes of wall time alone. And a scratch shader
+override built from `overrideShader` twice keeps only the second: it starts
+from the shipped source every call. Apply several edits to one string and set
+it once.
+
 **This machine was shared.** Other sessions had ffmpeg at 700% and Arena up;
 timings moved 50% between runs. The bench takes the best and the median of five
 batches.
@@ -286,6 +384,7 @@ batches.
 | `--still` blob | first mark <= K sigma / R^2; falling at every mark and 10x overall | the capillary Darcy speed: the whole Laplace pressure driving flow across the blob |
 | `--volume` wax | 6 x 2 ulp(1.5) x sqrt(cells x passes) | each cell's own rounding, a random walk (Higham 2.8) |
 | `--volume` heat | 5 ulps of the cell's T a step | the update's ulp plus T times the divergence's rounding at Courant 1/4 |
+| `--persist` | every 5 of 120 lamp-minutes at 30x, 16:9 and 9:16: phi max > 0.9, phi min < 0.05, the wax's area >= half its start | an interface (v0.1.0's lamp ended a uniform 0.15), clear water (v0.1.0's hazed past 0.05 in 23 minutes), most of the wax still blobs; 120 minutes is 1.7x v0.1.0's collapse at 16:9 and 2.7x at 9:16 |
 | `--crossover` | 1e-5 K + 2 ulps of T | bisection width, and where float(T) passes float(T*) |
 | `--darcy` assembly | 1e-6 coefficients, 1e-5 right-hand side | six float operations; rho' is ~3x the anomaly it differences |
 | `--darcy` solve | Cauchy-Schwarz from the GPU's residual | the energy-norm error is sqrt(r A^-1 r), exactly |
@@ -306,17 +405,20 @@ batches.
 | `--lens` | xi / R (4/3 of it at R/2) | the edge is at the interface's middle to half its width |
 | `--state` | exact | every piece of GL state a host could care about |
 
-Every one has a negative control in `--negative` (16 wrong models, all
-detected; the two aspect ones expect v0.1.0's unshared bulb and world), and
+Every one has a negative control in `--negative` (17 wrong models, all
+detected; the two aspect ones expect v0.1.0's unshared bulb and world, and
+`--persist`'s runs v0.1.0's transport, the sharpening's Gamma set to 0, which
+lapses at 15 lamp-minutes with half the wax's area gone), and
 `--mutate` changes one character of the shipped GLSL (gravity's sign in the
 buoyancy) and requires `--crossover` to fail (three checks do).
 
 ## Would each check hold on another rasteriser, at another raster?
 
 - **The physics checks run on a grid in metres**, so their raster is
-  irrelevant by construction: `--still`, `--volume`, `--crossover`, `--darcy`,
-  `--multigrid`, `--diffusion`, `--rt`, `--heat`, `--bulb`, `--lens` would give
-  the same numbers at 4K.
+  irrelevant by construction: `--still`, `--volume`, `--persist`, `--crossover`,
+  `--darcy`, `--multigrid`, `--diffusion`, `--rt`, `--heat`, `--bulb`, `--lens`
+  would give the same numbers at 4K. (Checked for `--persist`'s lamp: 320x180
+  and 960x540 ran bit-identical.)
 - **The optics checks run at 480 x 270, 1280 x 720 and 270 x 480** (`--glass`).
 - **Another aspect.** "Raster-independent" is true of the raster's size, not
   its shape: the lamp is as wide as the frame, so a portrait raster is a
@@ -407,6 +509,10 @@ Assumed, or not done:
   is exercised by events but not measured on its own.
 - **The dye** is not conserved and relaxes when stretched: it is a picture, not
   a physical quantity.
+- **The sharpening is a numerical device**, like the mobility: a flux that
+  undoes what the advection smears, at a gain (0.5) and Reach (2) MEASURED on
+  this lamp. It leaves faint specks in the water that View = Wax shows. The
+  lamp has run six hours at 30x and two at 3x; nothing longer.
 
 ## Browser demo
 
@@ -467,6 +573,9 @@ shared kit (`stoatworks-backend/resolume-demo`, vendored by hand into
 
 ## Open design questions
 
+- The haze the sharpening leaves gathers into specks (above). A less diffusive
+  transport for phi -- one that moves Cahn-Hilliard's profile without smearing
+  it at all -- would need neither.
 - A semi-implicit capillary term would lift the step limit, allow clean
   paraffin's 50 mN/m, and make Speed 300x real.
 - Brinkman (rounder blobs) needs a fourth-order solve or a split.

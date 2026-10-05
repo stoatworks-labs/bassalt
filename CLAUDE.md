@@ -18,18 +18,25 @@ anything marked `precise`.
 - The card on its own: `./build/bstest --card /tmp/card.png`
 - List parameters: `./build/bstest --list`
 - Set anything by name: `./build/bstest --set "Clip=1" --set "Glass=1"`
-- Watch the state: `./build/bstest --probe 60 --frames 600`
+- Watch the state: `./build/bstest --probe 60 --frames 600` (prints the water's
+  median phi -- the haze -- and the wax's area too)
+- The wax one rising blob leaves behind per cm: `./build/bstest --shed`
 - Film: `./build/bstest --film 600 --size 960x540 --script docs/demo.cues | ffmpeg -f rawvideo -pix_fmt rgba -s 960x540 -r 60 -i - out.mp4`
 - Film a clip through it: `ffmpeg -i in.mov -f rawvideo -pix_fmt rgba - | ./build/bstest --pipe --size WxH [--script cues] | ffmpeg ...`
 - Dump what a check sets up: `--dump DIR` with a check (development aid)
 
 ## Verify
-- Everything: `tools/verify.sh` (~3 min: fresh universal build, every check, the
-  negative controls, the mutation, the sweep, lipo, plist, names, ad-hoc
-  signature, `oxbow probe`, the bench). Do not edit it while it runs.
+- Everything: `tools/verify.sh` (~7 min, two of them `--persist`: fresh
+  universal build, every check, the negative controls, the mutation, the
+  sweep, lipo, plist, names, ad-hoc signature, `oxbow probe`, the bench). Do
+  not edit it while it runs.
 - **Rest**: `--still` (a level slab's psi exactly 0; a neutral blob's currents
   bounded and falling). **Conservation**: `--volume` (wax to six random walks
   of rounding; the local maximum principle for heat, every cell every step).
+- **The wax lasts**: `--persist` (two hours of lamp at 30x, 16:9 and 9:16: an
+  interface, clear water and at least half the wax's area, every 5 minutes).
+  v0.1.0's wax dissolved into the water in about an hour; AGENTS.md, "The wax
+  dissolved".
 - **The laws**: `--crossover` (T* and its salt slope), `--darcy` (the
   depolarisation speed, and the GPU solve against an exact CPU solve of its own
   system), `--rt` (Rayleigh-Taylor growth and cutoff), `--diffusion`, `--heat`
@@ -40,7 +47,7 @@ anything marked `precise`.
   temperature; a 9:16 lamp warms on the 16:9 curve). The watts and Refraction
   are a 16:9 lamp's; other frames get `physics::AspectShare` of them, exactly
   1 at 16:9 -- keep it that way, or 16:9 output stops being bit-identical.
-- **The checks can fail**: `--negative` (16 wrong models), `--mutate` (one
+- **The checks can fail**: `--negative` (17 wrong models), `--mutate` (one
   character of the shipped GLSL).
 - No dead controls: `python3 tools/sweep.py` (30 live; five need the context
   table: audio, a raised bass, a pour).
@@ -62,6 +69,11 @@ anything marked `precise`.
 - **Cahn-Hilliard is subcycled** in its own pass; its mobility is a numerical
   device sized so a resting blob's currents die.
 - Van Leer on phi and T. Superbee made spurious currents permanent.
+- **The interface's sharpening** (update pass, phi only): a conservative flux
+  that vanishes on Cahn-Hilliard's profile, at kSharpening (0.5) x the fastest
+  face, so nothing at rest. Without it the advection's numerical diffusion
+  dissolved the wax in an hour. Reach (2) is how flat a profile may be and still
+  be pulled back; bigger gathers the leftover haze into specks.
 - All host parameters are 0..1 and mapped in `Controls.cpp`; option parameters
   hold the element value; events act on the rising edge.
 - Names at most 16 characters (the FFGL field is not null-terminated);

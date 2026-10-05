@@ -651,6 +651,9 @@ void BassaltPlugin::UpdatePass( double dt, double power, double clipPower, GLuin
 	p.Set( "MaxUV", maxUV.s, maxUV.t );
 	p.Set( "UVRelax", kDyeRelax );
 	p.Set( "SpeedCap", static_cast< float >( physics::kCourant * std::min( grid.dx, grid.dy ) / dt ) );
+	p.Set( "Xi", static_cast< float >( physics::InterfaceWidth( grid ) ) );
+	p.Set( "Sharpening", static_cast< float >( physics::kSharpening ) );
+	p.Set( "Reach", static_cast< float >( physics::kSharpeningReach ) );
 	Draw();
 	stateIndex = target;
 }
