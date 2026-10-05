@@ -862,7 +862,9 @@ struct Perturb
 	double lagFraction     = 0.0;  ///< --bulb: nonzero expects this fraction at tau
 	bool unprimed          = false;///< --bulb: the onset detector not primed
 	double index           = 0.0;  ///< --glass: nonzero expects this water index
+	bool unsharedWorld     = false;///< --glass: expects the world Refraction metres behind at every aspect (v0.1.0)
 	bool wholePenalty      = false;///< --lens: the inflation pinned wherever there is any water
+	bool unshared          = false;///< --aspect: expects every frame to get the whole bulb, whatever its width (v0.1.0)
 };
 
 /// Replace one exact substring of a shipped shader, which must occur exactly
@@ -2201,12 +2203,18 @@ void cylinderMap( double u, double n, double D, double W, double& slice, double&
 
 int runGlass( const Perturb& perturb )
 {
-	std::printf( "\n=== glass: Flat with no wax is the identity; Cylinder is Snell's law, at two rasters\n" );
+	std::printf( "\n=== glass: Flat with no wax is the identity; Cylinder is Snell's law, at three rasters, one portrait\n" );
 	const double n = perturb.index > 0.0 ? perturb.index : ph::kWaterIndex;
-	const int sizes[][ 2 ] = { { 480, 270 }, { 1280, 720 } };
+	//The portrait raster is where the world's distance matters: it is the
+	//frame's share of Refraction, its aspect over 16:9, so a 9:16 cylinder
+	//frames the clip as a 16:9 one does. At Refraction metres it sent 42% of
+	//its columns past the clip's edge. Written out here rather than taken from
+	//physics::AspectShare, so a plugin that stopped sharing would fail.
+	const int sizes[][ 2 ] = { { 480, 270 }, { 1280, 720 }, { 270, 480 } };
 	for( const auto& size : sizes )
 	{
 		const int w = size[ 0 ], h = size[ 1 ];
+		const double share = perturb.unsharedWorld ? 1.0 : ( static_cast< double >( w ) / h ) / ( 16.0 / 9.0 );
 		const Floats card = coordinateCard( w, h );
 		for( int mode = 0; mode < 3; ++mode )//Flat, Cylinder behind, Cylinder dyed
 		{
@@ -2258,7 +2266,7 @@ int runGlass( const Perturb& perturb )
 						if( std::fabs( 2.0 * u - 1.0 ) > 0.95 )
 							continue;
 						double slice = 0, world = 0;
-						cylinderMap( u, n, RefractionFromParam( 0.3f ), W, slice, world );
+						cylinderMap( u, n, share * RefractionFromParam( 0.3f ), W, slice, world );
 						expected = mode == 1 ? world : slice;
 						if( expected < 0.01 || expected > 0.99 )
 							continue;
@@ -2280,6 +2288,130 @@ int runGlass( const Perturb& perturb )
 	return Verdict();
 }
 const Registrar kGlass( "glass", runGlass );
+
+//===========================================================================
+// --aspect
+//===========================================================================
+int runAspect( const Perturb& perturb )
+{
+	std::printf( "\n=== aspect: a frame of any aspect is a slice of the 16:9 lamp -- the same warm lamp, warming on the same curve\n" );
+	const float ambientP = ambientParam( 22.0 );
+	const double Ta      = deliveredAmbient( ambientP );
+	const double P       = BulbFromParam( bulbParam( 30.0 ) );
+
+	//-------------------------------------------------------------------
+	// A: Warm, at five aspects. A fresh lamp's first frame takes no time and
+	// sets every cell to the lumped steady temperature Ta + P / hA. The glass
+	// and the cap go as the width, and so does the frame's share of the bulb,
+	// so that is the 16:9 lamp's at every aspect -- below T*, so the wax
+	// cycles. v0.1.0 gave every frame the whole bulb: a 9:16 lamp warmed to
+	// 124 C, above T* in every cell, and all its wax lay at the cap. Bound: the
+	// warm temperature is rounded to float once.
+	//-------------------------------------------------------------------
+	const int sizes[][ 2 ]   = { { 320, 180 }, { 180, 320 }, { 216, 270 }, { 240, 240 }, { 420, 180 } };
+	const char* const names[] = { "16:9", "9:16", "4:5", "1:1", "21:9" };
+	for( size_t k = 0; k < sizeof( sizes ) / sizeof( sizes[ 0 ] ); ++k )
+	{
+		const int w = sizes[ k ][ 0 ], h = sizes[ k ][ 1 ];
+		Rig rig;
+		if( !rig.Init( w, h ) )
+			return 1;
+		rig.Set( PT_DETAIL, detailParam( 64 ) );
+		rig.Set( PT_LAMP_HEIGHT, heightParam( 0.3 ) );
+		rig.Set( PT_AMBIENT, ambientP );
+		rig.Set( PT_BULB, bulbParam( 30.0 ) );
+		rig.Render( 1 );
+
+		const ph::Grid g    = rig.plugin.CurrentGrid();
+		const ph::Lamp lamp = rig.plugin.CurrentLamp();
+		ph::Lamp reference  = lamp;
+		reference.width     = lamp.height * 16.0 / 9.0;//not physics::kReferenceAspect: see --glass
+		const ph::Lamp& model = perturb.unshared ? lamp : reference;
+		const double warm     = Ta + P / ( ph::FaceConductance( model ) + ph::CapConductance( model ) );
+		const double unshared = Ta + P / ( ph::FaceConductance( lamp ) + ph::CapConductance( lamp ) );
+
+		const Field s = readField( rig );
+		double worst = 0.0;
+		for( int j = 0; j < s.ny; ++j )
+			for( int i = 0; i < s.nx; ++i )
+			{
+				const double T = s.at( i, j, 1 );
+				worst = std::max( worst, std::isfinite( T ) ? std::fabs( T - warm ) / ulpOf( warm ) : INFINITY );
+			}
+		Check( worst <= 1.0, fmt( "%-4s %dx%d, grid %dx%d: Warm put the lamp at %.3f C against %.3f C, worst %.2f ulps "
+		                          "(bound 1; the whole bulb would be %.1f C; T* %.1f C)",
+		                          names[ k ], w, h, g.nx, g.ny, s.at( 0, 0, 1 ), warm, worst, unshared,
+		                          ph::Crossover( SaltFromParam( rig.plugin.GetFloatParameter( PT_SALT ) ) ) ) );
+	}
+
+	//-------------------------------------------------------------------
+	// B: the bulb in the update pass, not just the event. A 16:9 and a 9:16
+	// lamp from cold, in lockstep: flow frozen and the cap off, so each one's
+	// mean obeys C dTm/dt = P - hA ( Tm - Ta ) exactly (--heat), and with the
+	// bulb shared C, P and hA are all the same multiple of the 16:9 lamp's.
+	// The steps are the same (one a frame, under both diffusion limits), so
+	// the two means agree to their rounding: each to its own recurrence by 2
+	// ulps a cell a step (--heat), plus the bulb's rate through ten float
+	// roundings on each side, 1e-6 of the heat it has put in.
+	//-------------------------------------------------------------------
+	Rig wide, tall;
+	Rig* rigs[] = { &wide, &tall };
+	const int rasters[][ 2 ] = { { 320, 180 }, { 180, 320 } };
+	for( int r = 0; r < 2; ++r )
+	{
+		Rig& rig = *rigs[ r ];
+		if( !rig.Init( rasters[ r ][ 0 ], rasters[ r ][ 1 ] ) )
+			return 1;
+		rig.Set( PT_DETAIL, detailParam( 64 ) );
+		rig.Set( PT_LAMP_HEIGHT, heightParam( 0.3 ) );
+		rig.Set( PT_AMBIENT, ambientP );
+		rig.Set( PT_GAP, gapParam( 0.001 ) );
+		rig.Set( PT_TENSION, 0.0f );
+		rig.Set( PT_BULB, bulbParam( 30.0 ) );
+		rig.Set( PT_BULB_LAG, 0.0f );
+		rig.Set( PT_SPEED, speedParam( 30.0 ) );
+		rig.plugin.SetFlowFrozenForTest( true );
+		rig.plugin.SetCapForTest( false );
+		rig.plugin.KeepStepLog( true );
+		rig.Render( 1 );
+		rig.Press( PT_RESET );
+	}
+	const double share = ( 180.0 / 320.0 ) / ( 16.0 / 9.0 );
+	auto meanT = []( const Rig& rig ) {
+		const Field s = readField( rig );
+		return sumChannel( s, 1 ) / ( s.nx * s.ny );
+	};
+	const double capacity = ph::HeatCapacityTotal( wide.plugin.CurrentLamp() );
+	double worst = 0.0, heated = 0.0, wideMean = 0.0, tallMean = 0.0;
+	bool sameSteps = true;
+	size_t used    = 0;
+	for( int frame = 0; frame < 340; ++frame )
+	{
+		wide.Render( 1 );
+		tall.Render( 1 );
+		const auto& a = wide.plugin.StepLog();
+		const auto& b = tall.plugin.StepLog();
+		sameSteps = sameSteps && a.size() == b.size();
+		for( ; sameSteps && used < a.size(); ++used )
+		{
+			sameSteps = a[ used ].dt == b[ used ].dt;
+			heated += a[ used ].dt * a[ used ].bulbPower / capacity;
+		}
+		wideMean = meanT( wide );
+		tallMean = meanT( tall );
+		const double expected = perturb.unshared ? Ta + ( wideMean - Ta ) / share : wideMean;
+		const double bound    = 2.0 * static_cast< double >( a.size() ) * 2.0 * ulpOf( wideMean + 40.0 ) + 1e-6 * heated;
+		worst = std::max( worst, std::fabs( tallMean - expected ) / bound );
+	}
+	wide.plugin.SetFlowFrozenForTest( false );
+	tall.plugin.SetFlowFrozenForTest( false );
+	Check( sameSteps, fmt( "the two lamps took the same %zu steps", wide.plugin.StepLog().size() ) );
+	Check( worst <= 1.0, fmt( "9:16 against 16:9 from cold, %.0f s: means %.4f and %.4f C, worst %.2e of the rounding bound "
+	                          "(9:16 gets %.4f of the bulb; all of it would warm it %.1fx as fast)",
+	                          wide.plugin.SimTime(), tallMean, wideMean, worst, share, 1.0 / share ) );
+	return Verdict();
+}
+const Registrar kAspect( "aspect", runAspect );
 
 //===========================================================================
 // --state
@@ -2620,7 +2752,11 @@ int runNegative( const Perturb& )
 	add( "bulb", "expect the lag half done at tau instead of 1 - 1/e", []( Perturb& p ) { p.lagFraction = 0.5; } );
 	add( "bulb", "the onset detector not primed on its first frame", []( Perturb& p ) { p.unprimed = true; } );
 	add( "glass", "expect glass's index, n = 1.5, not water's", []( Perturb& p ) { p.index = 1.5; } );
+	add( "glass", "expect the world Refraction metres behind at every aspect, as v0.1.0 had it",
+	     []( Perturb& p ) { p.unsharedWorld = true; } );
 	add( "lens", "the inflation pinned to zero wherever there is any water at all", []( Perturb& p ) { p.wholePenalty = true; } );
+	add( "aspect", "expect every frame to get the whole bulb, as v0.1.0 gave it: a 9:16 lamp at 124 C",
+	     []( Perturb& p ) { p.unshared = true; } );
 
 	int unfalsifiable = 0;
 	for( const Case& c : cases )
@@ -2899,7 +3035,7 @@ int main( int argc, char** argv )
 				"  --script PATH     parameter cues for --pipe/--film: 'frame Name value'\n"
 				"  --probe [N]       print the lamp's state every N frames\n\n"
 				"  --still --volume --crossover --darcy --multigrid --diffusion --rt --heat\n"
-				"  --bulb --glass --lens --state --negative --mutate --bench\n"
+				"  --bulb --glass --aspect --lens --state --negative --mutate --bench\n"
 				"  --dump DIR        with a check: write the fields it sets up (development aid)\n" );
 			return 0;
 		}

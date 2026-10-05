@@ -34,9 +34,13 @@ anything marked `precise`.
   depolarisation speed, and the GPU solve against an exact CPU solve of its own
   system), `--rt` (Rayleigh-Taylor growth and cutoff), `--diffusion`, `--heat`
   (the lumped law and the joule budget), `--bulb` (63% at tau; primed onset).
-- **The solve**: `--multigrid`. **The optics**: `--glass` (two rasters),
-  `--lens` (a round blob is a sphere's lens). **The host**: `--state`.
-- **The checks can fail**: `--negative` (14 wrong models), `--mutate` (one
+- **The solve**: `--multigrid`. **The optics**: `--glass` (three rasters, one
+  portrait), `--lens` (a round blob is a sphere's lens). **The host**: `--state`.
+- **Any aspect**: `--aspect` (Warm at five aspects is the 16:9 lamp's
+  temperature; a 9:16 lamp warms on the 16:9 curve). The watts and Refraction
+  are a 16:9 lamp's; other frames get `physics::AspectShare` of them, exactly
+  1 at 16:9 -- keep it that way, or 16:9 output stops being bit-identical.
+- **The checks can fail**: `--negative` (16 wrong models), `--mutate` (one
   character of the shipped GLSL).
 - No dead controls: `python3 tools/sweep.py` (30 live; five need the context
   table: audio, a raised bass, a pour).

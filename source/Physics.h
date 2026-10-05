@@ -82,6 +82,11 @@ constexpr double kWaxConductivity    = 0.24;
 /// for its bulb; 2.5 per face makes 30 W hold a 0.3 m lamp near 60 C.
 constexpr double kFaceLoss = 2.5;
 
+/// The frame aspect the heat was tuned at: kFaceLoss and the default bulb are
+/// a 16:9 lamp's. A frame of any other aspect is a slice of that lamp as wide
+/// as the frame, not a smaller lamp on the same bulb (AspectShare).
+constexpr double kReferenceAspect = 16.0 / 9.0;
+
 /// Heat loss through the metal cap -- the top edge -- W/(m^2 K) over the cap's
 /// area (the frame width times the gap). A cap is a finned heat sink.
 constexpr double kCapLoss = 60.0;
@@ -217,6 +222,22 @@ double CapConductance( const Lamp& lamp );
 
 /// The lamp's heat capacity, J/K: C W H b.
 double HeatCapacityTotal( const Lamp& lamp );
+
+/// A frame's share of the reference lamp: its aspect over kReferenceAspect,
+/// exactly 1 for any 16:9 raster. Everything that heats the lamp (the bulb,
+/// Bass, Kick, Clip Heat) is the 16:9 lamp's times this, and so is the
+/// distance to the world behind.
+///
+/// Why: the glass, the cap and the heat capacity all go as the width, so with
+/// the power shared too the lumped law C dTm/dt = P - hA ( Tm - Ta ) is the
+/// same at every aspect -- the same mean, the same time constant, the same
+/// heat into each metre of base. Unshared, a 9:16 frame put the 16:9 lamp's
+/// 30 W into a third of the glass: the warm lamp sat at 124 C, every cell was
+/// above T*, and all the wax lay at the cap. And the world behind is the clip,
+/// as wide as the frame, so at a share of the distance it fills the same angle
+/// and a Cylinder of radius W / 2 frames it as the 16:9 one does; unshared, a
+/// 9:16 Cylinder sent 42% of its columns past the clip's edge (7% at 16:9).
+double AspectShare( double aspect );
 
 //---------------------------------------------------------------------------
 // The grid.

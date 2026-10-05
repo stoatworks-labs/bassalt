@@ -732,7 +732,7 @@ void BassaltPlugin::Simulate( double dtFrame, GLuint clipTexture, const FFGLTexC
 	const double interfaceLimit = physics::InterfaceLimit( grid );
 	const double target    = BulbTarget();
 	const double tau       = BulbLagFromParam( params[ PT_BULB_LAG ] );
-	const double clipPower = ClipHeatFromParam( params[ PT_CLIP_HEAT ] );
+	const double clipPower = share * ClipHeatFromParam( params[ PT_CLIP_HEAT ] );
 	const double cell      = std::min( grid.dx, grid.dy );
 
 	CollectSpeed();
@@ -763,8 +763,10 @@ void BassaltPlugin::Simulate( double dtFrame, GLuint clipTexture, const FFGLTexC
 		if( speed > 0.0 )
 			dt = std::min( dt, physics::kCourant * cell / speed );
 
+		//The bulb runs in the 16:9 lamp's watts (its glow in the composite is
+		//that); the frame gets its share of them.
 		bulbPower          = physics::BulbStep( bulbPower, target, dt, tau );
-		const double power = bulbPower + pendingKick / dt;
+		const double power = share * ( bulbPower + pendingKick / dt );
 		pendingKick        = 0.0;
 
 		UpdatePass( dt, power, clipPower, clipTexture, maxUV );
@@ -892,6 +894,7 @@ FFResult BassaltPlugin::ProcessOpenGL( ProcessOpenGLStruct* pgl )
 	//-------------------------------------------------------------------
 	lamp = CurrentLamp();
 	lamp.width = lamp.height * static_cast< double >( width ) / static_cast< double >( height );
+	share      = physics::AspectShare( static_cast< double >( width ) / static_cast< double >( height ) );
 
 	const int detail              = optionIndex( params[ PT_DETAIL ], kDetailCount );
 	const physics::Grid wanted    = physics::ChooseGrid( lamp.width, lamp.height, kDetailCells[ detail ] );
@@ -906,7 +909,7 @@ FFResult BassaltPlugin::ProcessOpenGL( ProcessOpenGLStruct* pgl )
 
 	const FFGLTexCoords maxUV = GetMaxGLTexCoords( source );
 	const float warmT = static_cast< float >(
-		lamp.ambient + BulbTarget() / ( physics::FaceConductance( lamp ) + physics::CapConductance( lamp ) ) );
+		lamp.ambient + share * BulbTarget() / ( physics::FaceConductance( lamp ) + physics::CapConductance( lamp ) ) );
 
 	if( fresh || resetWanted )
 	{
@@ -980,7 +983,7 @@ FFResult BassaltPlugin::ProcessOpenGL( ProcessOpenGLStruct* pgl )
 		p.Set( "Tint", params[ PT_TINT_R ], params[ PT_TINT_G ], params[ PT_TINT_B ] );
 		p.Set( "Glow", GlowFromParam( params[ PT_GLOW ] ) );
 		p.Set( "BulbFraction", static_cast< float >( bulbPower / 60.0 ) );
-		p.Set( "Distance", RefractionFromParam( params[ PT_REFRACTION ] ) );
+		p.Set( "Distance", static_cast< float >( share * RefractionFromParam( params[ PT_REFRACTION ] ) ) );
 		p.Set( "WaxIndex", static_cast< float >( physics::kWaxIndex ) );
 		p.Set( "WaterIndex", static_cast< float >( physics::kWaterIndex ) );
 		p.Set( "Slope", static_cast< float >( physics::CrossoverSlope( lamp.salt ) ) );

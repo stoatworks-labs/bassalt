@@ -1103,6 +1103,7 @@ const physics = {
   kLiquidConductivity: 0.6,
   kWaxConductivity: 0.24,
   kFaceLoss: 2.5,
+  kReferenceAspect: 16.0 / 9.0,
   kCapLoss: 60.0,
   kCoilHeight: 0.03,
   kCoilWidth: 0.5,
@@ -1139,6 +1140,11 @@ const physics = {
   },
   capConductance(lamp) {
     return this.kCapLoss * lamp.width * lamp.gap;
+  },
+  // A frame of any aspect is a slice of the 16:9 lamp: it gets this share of
+  // the bulb and sees the world behind at this share of the distance.
+  aspectShare(aspect) {
+    return aspect / this.kReferenceAspect;
   },
   interfaceWidth(grid) {
     return this.kInterfaceCells * Math.max(grid.dx, grid.dy);
@@ -1297,6 +1303,7 @@ function createRenderer(gl, quad) {
   let haveThickness = false;
   let grid = { nx: 0, ny: 0, levels: 0, dx: 0, dy: 0 };
   let lamp = null;
+  let share = 1.0; // the frame's share of the 16:9 lamp: physics.aspectShare
 
   let speedBuffer = null;
   let speedFence = null;
@@ -1664,7 +1671,7 @@ function createRenderer(gl, quad) {
     const interfaceLimit = physics.interfaceLimit(grid);
     const target = bulbTarget(params);
     const tau = controls.bulbLag(params.get('bulbLag'));
-    const clipPower = controls.clipHeat(params.get('clipHeat'));
+    const clipPower = share * controls.clipHeat(params.get('clipHeat'));
     const cell = Math.min(grid.dx, grid.dy);
 
     collectSpeed();
@@ -1684,8 +1691,9 @@ function createRenderer(gl, quad) {
       let dt = Math.min(remaining, limit);
       if (speed > 0.0) dt = Math.min(dt, (physics.kCourant * cell) / speed);
 
+      // The bulb runs in the 16:9 lamp's watts; the frame gets its share.
       bulbPower = physics.bulbStep(bulbPower, target, dt, tau);
-      const power = bulbPower + pendingKick / dt;
+      const power = share * (bulbPower + pendingKick / dt);
       pendingKick = 0.0;
 
       updatePass(dt, power, clipPower, clipTexture);
@@ -1742,6 +1750,7 @@ function createRenderer(gl, quad) {
         coil: controls.coil(params.get('coil')),
       };
       lamp.width = (lamp.height * width) / height;
+      share = physics.aspectShare(width / height);
 
       const detail = clamp(Math.round(params.get('detail')), 0, kDetailCells.length - 1);
       const wanted = chooseGrid(lamp.width, lamp.height, kDetailCells[detail]);
@@ -1751,7 +1760,7 @@ function createRenderer(gl, quad) {
 
       const clipTexture = input.texture;
       const warmT = lamp.ambient
-        + bulbTarget(params) / (physics.faceConductance(lamp) + physics.capConductance(lamp));
+        + share * bulbTarget(params) / (physics.faceConductance(lamp) + physics.capConductance(lamp));
 
       if (fresh || resetWanted) {
         eventPass(0, lamp.ambient, clipTexture, params);
@@ -1813,7 +1822,7 @@ function createRenderer(gl, quad) {
         p.set('Tint', params.get('tintR'), params.get('tintG'), params.get('tintB'));
         p.set('Glow', controls.glow(params.get('glow')));
         p.set('BulbFraction', bulbPower / 60.0);
-        p.set('Distance', controls.refraction(params.get('refraction')));
+        p.set('Distance', share * controls.refraction(params.get('refraction')));
         p.set('WaxIndex', physics.kWaxIndex);
         p.set('WaterIndex', physics.kWaterIndex);
         p.set('Slope', physics.crossoverSlope(lamp.salt));

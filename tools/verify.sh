@@ -301,7 +301,7 @@ fi
 step "Checks"
 #---------------------------------------------------------------------------
 # Every claim the README makes, in the order the README makes them.
-for check in still volume crossover darcy multigrid diffusion rt heat bulb glass lens state; do
+for check in still volume crossover darcy multigrid diffusion rt heat bulb glass aspect lens state; do
 	"$BUILD/bstest" --$check || fail "bstest --$check"
 done
 

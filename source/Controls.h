@@ -20,7 +20,17 @@
     settings run the same lamp at 720p and at 4K -- the raster only decides how
     finely the finished lamp is looked at. That is why every *physics* check in
     `bstest` is raster-independent by construction, and only the *optics*
-    checks have to run at two rasters.
+    checks have to run at several rasters. (Independent of the raster's size,
+    not its shape: see "aspect".)
+
+    ------------------------------------------------------------ aspect
+
+    The lamp is as wide as the frame, and the heat below (Bulb, Bass, Kick,
+    Clip Heat) and the Refraction distance are a **16:9** lamp's. A frame of
+    another aspect is a slice of that
+    lamp as wide as the frame and gets its share of them, aspect / (16/9)
+    (physics::AspectShare): a 9:16 frame runs the same lamp, at the same
+    temperature, as 16:9. Exactly 1 at 16:9.
 */
 
 namespace bassalt
@@ -152,7 +162,8 @@ float ParamFromSpeed( float speed );
 /// The room, degrees C: 10 to 40, linearly.
 float AmbientFromParam( float value );
 
-/// The bulb's electrical power, watts: 0 to 60, linearly.
+/// The bulb's electrical power, watts: 0 to 60, linearly. A 16:9 lamp's; see
+/// "aspect" above.
 float BulbFromParam( float value );
 
 /// The bulb's thermal time constant, lamp seconds: 0.5 to 120, geometrically.
@@ -202,7 +213,9 @@ float GlowFromParam( float value );
 /// Refraction: the distance from the lamp's back to the world behind it, in
 /// metres: 0 to 1, linearly. At 0 the world is painted on the back glass and
 /// nothing is displaced; the further away it is, the more the wax's lenses and
-/// the cylinder move it.
+/// the cylinder move it. A 16:9 lamp's: the world is the clip, as wide as the
+/// frame, so a frame of another aspect has it at its share of this distance,
+/// where it fills the same angle ("aspect" above).
 float RefractionFromParam( float value );
 
 } // namespace bassalt

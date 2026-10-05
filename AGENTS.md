@@ -132,7 +132,8 @@ water's side of phi = 1/2; for a round blob h = (R^2 - r^2)/4, so 4 sqrt(h) is
 2 sqrt(R^2 - r^2), a sphere's chord. It is the same multigrid with a penalty
 diagonal, one warm-started cycle a frame, only when Lamp and Behind are shown.
 `--lens` checks a round blob against the sphere. Refraction is the thin-prism
-turn (n_wax - n_water) grad t, carried to a world Refraction metres behind;
+turn (n_wax - n_water) grad t, carried to a world Refraction metres behind
+(a 16:9 lamp's; another aspect has its share of that, "The traps");
 absorption is Beer-Lambert, Wax Colour being what 3 cm of wax transmits and
 Liquid Tint what the lamp's middle does.
 
@@ -166,6 +167,32 @@ than Speed asks (`--bench` prints the achieved rate).
 ## The traps
 
 Ordered by how much time they cost.
+
+**A portrait frame boiled the lamp** (v0.1.0, found 2026-10-04 rendering
+vjshow Vol. 2 at 540x960, fixed 2026-10-05). It looked like a texture or domain
+bug -- the wax squeezed into a band at the top, horizontally streaked mirrored
+copies of the clip below -- and the grid, the multigrid, the domain mapping and
+the wrap modes were all fine: every physics check passes on a 9:16 grid (run
+once with physicsRig's raster at 180x320; only `--rt` and `--heat`'s
+continuous law fail there, because their models pin the 16:9 width). Two
+things scaled with the frame's width and nothing compensated:
+- **The heat.** The lamp is as wide as the frame, and its glass and cap go as
+  the width, but the bulb did not: a 9:16 lamp got the 16:9 lamp's 30 W through
+  a third of the glass and warmed to 124 C, above T* in every cell, so all the
+  wax floated to the cap. That was the band.
+- **The Cylinder.** Its radius is W / 2 and the world stayed Refraction metres
+  behind, so a narrow cylinder imaged a world many radii away: inverted (the
+  mirrored copies) and wide (42% of a 9:16 frame's columns looked past the
+  clip's edge and were clamped to it, which is a horizontal streak; 7% at 16:9).
+The fix, `physics::AspectShare`: the watts (bulb, Bass, Kick, Clip Heat) and the
+world's distance are a 16:9 lamp's, and any other frame gets aspect / (16/9) of
+them -- a slice of the same lamp, so the lumped law, the heat into each metre of
+base and the cylinder's geometry are the 16:9 ones. The bulb's own state and
+its glow stay in the 16:9 watts. The share is exactly 1 at any 16:9 raster
+(1920/1080 and 16/9 round to the same double), so 16:9 output is bit-identical
+to v0.1.0: seven cases, 300 frames each, compared byte for byte. Lamp Height
+0.2 and 1.0 were tried as workarounds and are not: on the default 30 W a 0.16 m
+lamp boils (126 C) and a 1 m one sits at 25 C, at 16:9 too.
 
 **The GPU compiler reassociates floating point.** A level slab's circulation
 came out 2.6e-8, then (with the opposite faces differenced first) 9.5e-15:
@@ -274,12 +301,15 @@ batches.
 | `--bulb` | 1e-12 | the one-pole is exact for any step; double rounding over the steps |
 | `--glass` Flat | 1e-6 | pixel centres are exact; float |
 | `--glass` Cylinder | 1/512 texel + 2e-5 | the filter's 8 sub-texel bits; GLSL gives asin, tan, sin, cos no accuracy bound |
+| `--aspect` Warm | 1 ulp of T | the warm temperature is rounded to float once; the share cancels in double |
+| `--aspect` 9:16 vs 16:9 | both lamps' `--heat` recurrence bounds + 1e-6 of the heat put in | the same steps, each mean to its own recurrence; the bulb's rate through ten float roundings a side |
 | `--lens` | xi / R (4/3 of it at R/2) | the edge is at the interface's middle to half its width |
 | `--state` | exact | every piece of GL state a host could care about |
 
-Every one has a negative control in `--negative` (14 wrong models, all
-detected), and `--mutate` changes one character of the shipped GLSL (gravity's
-sign in the buoyancy) and requires `--crossover` to fail (three checks do).
+Every one has a negative control in `--negative` (16 wrong models, all
+detected; the two aspect ones expect v0.1.0's unshared bulb and world), and
+`--mutate` changes one character of the shipped GLSL (gravity's sign in the
+buoyancy) and requires `--crossover` to fail (three checks do).
 
 ## Would each check hold on another rasteriser, at another raster?
 
@@ -287,7 +317,12 @@ sign in the buoyancy) and requires `--crossover` to fail (three checks do).
   irrelevant by construction: `--still`, `--volume`, `--crossover`, `--darcy`,
   `--multigrid`, `--diffusion`, `--rt`, `--heat`, `--bulb`, `--lens` would give
   the same numbers at 4K.
-- **The optics checks run at 480 x 270 and 1280 x 720** (`--glass`).
+- **The optics checks run at 480 x 270, 1280 x 720 and 270 x 480** (`--glass`).
+- **Another aspect.** "Raster-independent" is true of the raster's size, not
+  its shape: the lamp is as wide as the frame, so a portrait raster is a
+  narrower grid. Every physics check was run once on 9:16 (see the portrait
+  trap) and holds but `--rt` and `--heat`'s continuous law, whose models fix
+  the 16:9 width. `--aspect` is the standing portrait check.
 - **Another GPU.** The bounds that are rounding bounds (volume, heat, diffusion,
   crossover) assume IEEE float storage and `precise` being honoured. A driver
   that ignored `precise` would fail `--still` (the slab's psi would be ~1e-14,
@@ -332,8 +367,10 @@ sign in the buoyancy) and requires `--crossover` to fail (three checks do).
 - **Clip Heat** is watts at an all-white clip, spread as the clip's luma.
 - **Pour** is the clip's luma through a smoothstep 0.08 wide about the
   threshold; poured wax takes the water's temperature where it lands.
-- **The lamp is as wide as the frame**, so a wider frame is a bigger lamp with
-  more glass, and needs more bulb for the same temperature.
+- **The lamp is as wide as the frame**, and a frame that is not 16:9 is a
+  slice of the 16:9 lamp: it gets aspect / (16/9) of the watts and of the
+  distance to the world (`physics::AspectShare`). v0.1.0 made a narrower frame
+  a smaller lamp on the same bulb, and a portrait one boiled (the traps).
 - **Raw GL bindings** in the passes rather than the SDK's `Scoped*`: those clear
   to 0 on exit and cannot unwind three or more units (millpond's trap). Every
   unit is unbound once at the end of `ProcessOpenGL`; `--state` checks.
@@ -385,7 +422,8 @@ shared kit (`stoatworks-backend/resolume-demo`, vendored by hand into
   (a backslash before a backtick, for the backticks round `precise` in an
   update-pass comment).
 - **The orchestration is a port that only a reader checks**: `Physics.cpp`
-  (constants, T*, ChooseGrid, the three step limits, the bulb's one-pole),
+  (constants, T*, ChooseGrid, the three step limits, the bulb's one-pole,
+  AspectShare -- moot on the page, whose compositions are all 16:9),
   `Controls.cpp` (each result rounded to float) and `BassaltPlugin`'s pass
   sequence -- ensureBuffers, the events, Simulate()'s substeps and Cahn-Hilliard
   subcycles, the V-cycle recursion, the inflation, the composite's uniforms.
@@ -434,6 +472,7 @@ shared kit (`stoatworks-backend/resolume-demo`, vendored by hand into
 - Brinkman (rounder blobs) needs a fourth-order solve or a split.
 - Latent heat would give the real lamp's long plateau at the melting point.
 - Should the lamp be a lamp-shaped mask in the frame (the spec's rocket), rather
-  than filling it? The heat balance would then not depend on the aspect.
+  than filling it? (The heat balance no longer depends on the aspect either
+  way: AspectShare.)
 - Is 2 mN/m and a T* just above the mean the right default lamp? It cycles, but
   it is one point in a space nobody has looked at on a real screen.

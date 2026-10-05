@@ -67,8 +67,8 @@ struct Multigrid
 struct StepRecord
 {
 	double dt        = 0.0;///< lamp seconds
-	double bulbPower = 0.0;///< W through the base, the kick included
-	double clipPower = 0.0;///< W at full white
+	double bulbPower = 0.0;///< W through the base, the kick included, the frame's share of it
+	double clipPower = 0.0;///< W at full white, likewise
 	double speed     = 0.0;///< the fastest face, m/s
 };
 
@@ -249,6 +249,7 @@ private:
 
 	physics::Grid grid;
 	physics::Lamp lamp;
+	double share     = 1.0;///< the frame's share of the 16:9 lamp: physics::AspectShare
 	int bufferWidth  = 0;
 	int bufferHeight = 0;
 
@@ -273,8 +274,8 @@ private:
 	//-------------------------------------------------------------------
 	// The bulb and the events.
 	//-------------------------------------------------------------------
-	double bulbPower   = 0.0;///< W, after the bulb's lag
-	double pendingKick = 0.0;///< J, into the base on the next substep
+	double bulbPower   = 0.0;///< W, after the bulb's lag: the 16:9 lamp's; the frame gets `share` of it
+	double pendingKick = 0.0;///< J, into the base on the next substep, likewise
 	bool warmWanted    = false;
 	bool resetWanted   = false;
 	bool pourWanted    = false;

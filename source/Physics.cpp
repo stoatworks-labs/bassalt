@@ -76,6 +76,11 @@ double HeatCapacityTotal( const Lamp& lamp )
 	return kHeatCapacity * lamp.width * lamp.height * lamp.gap;
 }
 
+double AspectShare( double aspect )
+{
+	return aspect / kReferenceAspect;
+}
+
 Grid ChooseGrid( double width, double height, int cellsUp )
 {
 	Grid grid;

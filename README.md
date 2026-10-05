@@ -149,9 +149,21 @@ media. The whole take is one run of one lamp, never reset.*
 - **Output:** View shows *Lamp*, the effect. *Temperature*, *Wax*, *Velocity*
   and *Density* show one field of the model on its own. Mix.
 
+**Any aspect.** The lamp fills the frame, and its heat and defaults are a 16:9
+lamp's. A portrait, square or wider frame is a slice of that same lamp, as
+wide as the frame: the bulb, Bass, Kick and Clip Heat are scaled by its width
+(aspect / 16:9), and the world behind is moved in by the same factor. So a
+9:16 canvas runs the 16:9 lamp's 54 C, convecting the full height of the
+frame. v0.1.0 put the whole bulb into the narrower lamp instead: at 9:16 it
+boiled at 124 C, every drop of wax floated to the cap, and a Cylinder sent
+42% of its columns past the clip's edge as horizontal streaks. Lamp Height
+still trades against Bulb at any aspect: on the default 30 W a 0.16 m lamp
+(Lamp Height 0.2) boils and a 1 m one (1.0) never melts.
+
 ## Status
 
-**v0.1.0, released 2026-09-23, and honestly early.**
+**v0.1.0, released 2026-09-23, and honestly early.** Main has one fix since,
+not yet released: frames that are not 16:9 (*Any aspect*, above).
 
 It has **never been loaded into Resolume** on either platform. Everything here
 comes from the offline harness, which drives the real plugin class headlessly.
@@ -180,10 +192,11 @@ What is measured, on this machine:
 | Rayleigh-Taylor | four modes grow or decay as they should, the rates within **0.8-2.4%** of the law once the diffuse interface's own response is divided out; cutoff **0.7%** from sqrt( drho g / sigma ) |
 | heat | the lamp's mean follows the lumped law to **0.6** of Euler's bound; every step's joules add up, to **4e-3** of its 2-ulp bound |
 | the bulb | **63.2121%** at its time constant; a primed onset detector fires on frame 1 |
-| the glass | Flat is the identity to **3e-8**; Cylinder is Snell's law to **1e-5**, at two rasters |
+| the glass | Flat is the identity to **3e-8**; Cylinder is Snell's law to **1e-5** at two 16:9 rasters and **4e-5** at 9:16 |
+| any aspect | Warm puts a 9:16, 4:5, 1:1 or 21:9 lamp at the 16:9 lamp's temperature to **0.04 ulp**; from cold, a 9:16 lamp warms on the 16:9 curve to **3e-4** of the rounding bound |
 | the lens | a round blob is a sphere's chord to **2.6-3.7%** at the centre (the interface's width) |
 | GL state | everything a host could care about, pack buffer included, as it went in |
-| negative controls | **14** deliberately wrong models, **all 14** detected; one character of shipped GLSL changed, **caught** |
+| negative controls | **16** deliberately wrong models, **all 16** detected; one character of shipped GLSL changed, **caught** |
 | dead controls | **30** parameters, all live |
 
 Render cost (`bstest --bench`, the warm lamp at the default 3x, best of five
@@ -256,7 +269,8 @@ The offline harness renders the real plugin class headlessly:
     ./build/bstest --rt                   Rayleigh-Taylor growth and its cutoff
     ./build/bstest --heat                 the lumped law and every joule
     ./build/bstest --bulb                 the bulb's lag and the first onset
-    ./build/bstest --glass                Snell's law, at two rasters
+    ./build/bstest --glass                Snell's law, at three rasters, one portrait
+    ./build/bstest --aspect               any aspect runs the 16:9 lamp
     ./build/bstest --lens                 a round blob is a sphere's lens
     ./build/bstest --state                the host's GL state comes back as it went in
     ./build/bstest --negative             every check above, against a wrong model
