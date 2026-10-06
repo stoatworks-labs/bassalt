@@ -34,15 +34,15 @@ from Resolume.</sub>
 
 ## Download
 
-**[v0.1.0](https://github.com/stoatworks-labs/bassalt/releases/tag/v0.1.0)** — prebuilt for macOS and Windows. Pick your platform:
+**[v0.1.1](https://github.com/stoatworks-labs/bassalt/releases/tag/v0.1.1)** — prebuilt for macOS and Windows. Pick your platform:
 
 <details>
 <summary><b>macOS</b> — Universal (Apple Silicon + Intel)</summary>
 
 | Build | Download | Size |
 | --- | --- | --- |
-| Universal (Apple Silicon + Intel) · .dmg disk image | [`bassalt-0.1.0-macos-universal.dmg`](https://github.com/stoatworks-labs/bassalt/releases/download/v0.1.0/bassalt-0.1.0-macos-universal.dmg) | 262 KB |
-| Universal (Apple Silicon + Intel) · .zip archive | [`bassalt-macos-universal.zip`](https://github.com/stoatworks-labs/bassalt/releases/latest/download/bassalt-macos-universal.zip) | 220 KB |
+| Universal (Apple Silicon + Intel) · .dmg disk image | [`bassalt-0.1.1-macos-universal.dmg`](https://github.com/stoatworks-labs/bassalt/releases/download/v0.1.1/bassalt-0.1.1-macos-universal.dmg) | 268 KB |
+| Universal (Apple Silicon + Intel) · .zip archive | [`bassalt-macos-universal.zip`](https://github.com/stoatworks-labs/bassalt/releases/latest/download/bassalt-macos-universal.zip) | 222 KB |
 
 </details>
 
@@ -51,8 +51,8 @@ from Resolume.</sub>
 
 | Build | Download | Size |
 | --- | --- | --- |
-| x64 · .exe installer | [`bassalt-0.1.0-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/bassalt/releases/download/v0.1.0/bassalt-0.1.0-windows-x86_64-setup.exe) | 234 KB |
-| x64 · .zip archive | [`bassalt-windows-x86_64.zip`](https://github.com/stoatworks-labs/bassalt/releases/latest/download/bassalt-windows-x86_64.zip) | 129 KB |
+| x64 · .exe installer | [`bassalt-0.1.1-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/bassalt/releases/download/v0.1.1/bassalt-0.1.1-windows-x86_64-setup.exe) | 238 KB |
+| x64 · .zip archive | [`bassalt-windows-x86_64.zip`](https://github.com/stoatworks-labs/bassalt/releases/latest/download/bassalt-windows-x86_64.zip) | 130 KB |
 
 </details>
 
