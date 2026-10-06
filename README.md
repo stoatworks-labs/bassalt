@@ -174,8 +174,8 @@ from the first moving frame, at every aspect, 16:9 included.
 
 ## Status
 
-**v0.1.0, released 2026-09-23, and honestly early.** Main has two fixes since,
-neither released: frames that are not 16:9 (*Any aspect*, above), and wax
+**v0.1.1, released 2026-10-06, and honestly early.** It carries two fixes to
+v0.1.0 (2026-09-23): frames that are not 16:9 (*Any aspect*, above), and wax
 that dissolved into the water after about an hour of lamp (*The wax lasts*,
 above).
 
