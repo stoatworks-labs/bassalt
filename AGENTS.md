@@ -495,8 +495,9 @@ Assumed, or not done:
   whether the tint and wax colour show as swatches, whether the clock arrives in
   seconds (it is voted on), whether the events show as buttons.
 - **Resolume's FFT bins**, and Bass and Kick against real music.
-- **Windows** never built or run. The pack-buffer read, `precise` and RGBA32F
-  render targets are standard on DX11-class parts but untested.
+- **Windows** built by CI (release.yml, MSVC), never run. The pack-buffer read,
+  `precise` and RGBA32F render targets are standard on DX11-class parts but
+  untested.
 - **The look** is judged by eye: the lens rims streak where the lens's slope is
   steep, and the Cylinder's outermost few per cent band where rays graze.
 - **Short waves are slow.** At 128 cells the diffuse interface passes only

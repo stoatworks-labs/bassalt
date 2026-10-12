@@ -84,8 +84,8 @@ anything marked `precise`.
   file-scope constructor nothing references.
 - The macOS build must be universal. Check with `lipo`, never the build log.
 - Fleet repo: `stoatworks-labs/bassalt`, `~/Projects/resolume/bassalt`,
-  released v0.1.0 2026-09-23, registered in projects.json, sync-about TARGETS
-  and names.json. Version lives in CMakeLists `project(VERSION)` and
+  released v0.1.0 2026-09-23 and v0.1.1 2026-10-06, registered in projects.json,
+  sync-about TARGETS and names.json. Version lives in CMakeLists `project(VERSION)` and
   `StoatworksAbout.h` (generated; `sync-about.py --only bassalt --apply`).
 
 ## Not done yet
@@ -102,8 +102,9 @@ anything marked `precise`.
   one escape is \` for the backticks in an update-pass comment). Change a
   constant, a conversion or the pass order, change `plugin.js` too -- nothing
   checks that but a reader.
-- Local: `python3 -m http.server 8793` in `demo/`. Deploy: `cf-run npx wrangler
-  deploy` from the repo root. Verify by content (the `<title>`), not status.
+- Local: `python3 -m http.server 8793` in `demo/`. Deploy: a push to `main` runs
+  `.github/workflows/deploy.yml`; by hand, `cf-run npx wrangler deploy` from the
+  repo root. Verify by content (the `<title>`), not status.
 - `demo/vendor/` is the shared kit (stoatworks-backend/resolume-demo); never edit.
 - AGENTS.md "Browser demo" has the decisions and the gaps.
 

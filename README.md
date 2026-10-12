@@ -262,8 +262,9 @@ reassociate the sums that keep a level lamp still and the wax conserved to the
 bit. And the fastest-face read-back can't wait on its fence, so the step
 sequence depends on the GPU's timing. The page lists every difference.
 
-Deploy from the repo root with `cf-run npx wrangler deploy` (`wrangler.toml`,
-a static-assets Worker; no build step). `demo/vendor/` is the shared kit from
+A push to `main` redeploys it (`.github/workflows/deploy.yml`); by hand, deploy
+from the repo root with `cf-run npx wrangler deploy` (`wrangler.toml`, a
+static-assets Worker; no build step). `demo/vendor/` is the shared kit from
 `stoatworks-backend/resolume-demo`, copied in and never edited here.
 
 ## Build
