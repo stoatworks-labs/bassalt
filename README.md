@@ -164,7 +164,7 @@ about 70 lamp-minutes (45 at 9:16) there were no blobs left at all, just an
 evenly cloudy lamp that never separated again. An hour of lamp is two minutes
 of wall time at 30x and twenty at the default 3x. The cause was numerical: moving the wax a
 cell at a time smeared its edge into the water, a little each step, faster than
-the model of the interface could take it back. Main now pushes the smeared edge
+the model of the interface could take it back. v0.1.1 pushes the smeared edge
 back onto the interface as the wax moves, and does nothing to a lamp at rest.
 Two hours of lamp at 30x now keep 94% of the wax's area as blobs (89% at 9:16),
 with the water under 1% wax, and six hours look the same. The difference shows
@@ -180,10 +180,11 @@ above).
 It has **never been loaded into Resolume** on either platform. Everything here
 comes from the offline harness, which drives the real plugin class headlessly.
 `oxbow probe` on the *downloaded, notarised* release bundle reads it the way a
-host does and finds `SW Bassalt` / `BS01` / effect, 38 parameters; nothing
-else has run it. It's only been measured on macOS (Apple Silicon). The
-Windows x64 DLL is built by MSVC in CI (it compiled first time, which I've
-decided not to question) and nothing has run it. There's no OpenFX port and no
+host does and finds `SW Bassalt` / `BS01` / effect, 38 parameters (the lamp's
+34, then the About block's text and three buttons); nothing else has run it.
+It's only been measured on macOS (Apple Silicon). The Windows x64 DLL is built
+by MSVC in CI (it compiled first time, which I've decided not to question) and
+nothing has run it. There's no OpenFX port and no
 factory presets, and the browser demo (below) is the plugin's shaders rather
 than the plugin.
 The macOS downloads are signed and notarised (`spctl`: Notarized Developer
@@ -211,7 +212,7 @@ What's measured, on this Mac:
 | the lens | a round blob is a sphere's chord to **2.6-3.7%** at the centre (the interface's width) |
 | GL state | everything a host could care about, pack buffer included, as it went in |
 | negative controls | **17** deliberately wrong models, **all 17** detected; one character of shipped GLSL changed, **caught** |
-| dead controls | **30** parameters, all live |
+| dead controls | **30** parameters, all live: every one but the Audio buffer, the buttons and the About text |
 
 Render cost (`bstest --bench`, the warm lamp at the default 3x, best of five
 batches, on a machine shared with other jobs): **1.8-2.7 ms/frame at 720p,
