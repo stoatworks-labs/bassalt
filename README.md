@@ -3,17 +3,13 @@
 > **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
 > (Anthropic), directed and reviewed by a human author. It has **never been
 > loaded into Resolume**. Everything below is measured by an offline harness
-> that drives the real plugin class in a headless GL context. `bstest --darcy`
-> checks the GPU's flow solve against an exact CPU solve of the same equations
-> (they agree to 1e-9), and the flow itself against the Hele-Shaw speed of a
-> blob, extrapolated over three resolutions (0.1-0.5%). `--still` requires a
-> level lamp at rest to stay exactly at rest, `--crossover` finds the
-> temperature a blob stops at to 4e-6 K of where the density laws put it, and
-> `--volume` requires the wax to be conserved to the rounding of its own sums.
-> `bstest --negative` re-runs every check against a deliberately wrong model
-> and fails if any of them *passes*, and `--mutate` changes one character of
-> the shipped shaders and fails if nothing notices (see [Status](#status)). A
-> control sweep fails if any parameter turns out to do nothing.
+> that drives the real plugin class in a headless GL context: the GPU's flow
+> solve against an exact CPU solve, the flow against the Hele-Shaw speed of a
+> blob extrapolated over three resolutions (0.1-0.5% out), a level lamp at rest
+> staying at rest, the temperature a blob stops at, and the wax being conserved.
+> Every check is also re-run against a model that's wrong on purpose and has to fail,
+> the shipped shaders get a one-character mutation that has to be noticed, and a
+> control sweep fails if any parameter turns out to do nothing (see [Status](#status)).
 
 A lava lamp for Resolume Arena/Avenue, as an FFGL effect. Put a clip through
 it and it becomes the world behind the lamp, bent by the wax, or the wax
@@ -25,10 +21,10 @@ what a lamp maker dissolves in the water to set its density against the wax.
 ![A lava lamp seen through a glass cylinder: red wax lenses over a striped card, each showing a small inverted image of the ring behind](docs/hero-behind.png)
 
 <sub>Clip = Behind, Glass = Cylinder, eight minutes of lamp. The cylinder
-magnifies the world across its middle and squeezes it at the sides; each blob
-is a lens with a small upside-down ring in it. The picture is the harness's
-own card. Rendered by the plugin's offline harness (`bstest`), not captured
-from Resolume.</sub>
+magnifies the world across its middle and squeezes it at the sides, and each
+blob is a lens with a small upside-down ring in it. The picture is the harness's
+own card. Rendered by the plugin's offline harness (`bstest`) rather than
+captured from Resolume.</sub>
 
 <!-- downloads:start -->
 
@@ -65,10 +61,10 @@ macOS builds are signed and notarised and open normally. The Windows builds are 
 ## The one idea
 
 **The frame is a lava lamp, and the lamp is a heat engine.** A bulb in the base
-heats wax that is a little denser than the water above it when cold. Wax
+heats wax that's a little denser than the water above it when cold. Wax
 expands with heat about three times faster than water, so above a crossover
-temperature T* it is the lighter, and it rises; at the cap it cools, is denser
-again, and sinks.
+temperature T* it's the lighter of the two, and it rises; at the cap it cools,
+gets denser again, and sinks.
 
 Nothing is animated. The wax, the heat and the flow are four fields on a grid
 sized in metres, with their constants in the open:
@@ -89,8 +85,9 @@ What falls out of that, rather than being arranged:
   base as fingers of one size.
 - **The warm-up.** A cold lamp is a slab of solid wax; it has to melt from the
   coil up, and at 1x that takes an hour, as a real one does. Speed runs to
-  300x, and Warm jumps straight to the hot lamp.
-- **The stalls.** Too much bulb and every drop of wax is above T*: it all
+  300x, and Warm jumps straight to the hot lamp, for when doors are in five
+  minutes.
+- **The stalls.** Too much bulb and every drop of wax is above T*, so it all
   pools at the cap. Too little and it never leaves the base. Salt moves T*
   11.3 K per per cent.
 - **The lenses.** Wax (n = 1.44) in water (1.34) is a lens. A round blob bends
@@ -102,27 +99,27 @@ What falls out of that, rather than being arranged:
 stretched, pinched and carried up and down. Rendered by `bstest`.</sub>
 
 A ten-second reel, `docs/demo.mp4`: the warm lamp, then Pour, and the card's
-bright ring becomes wax, rises, necks and breaks up.
+bright ring turns into wax, rises, necks and breaks up.
 
 ### The one invented step
 
 The lamp is a 2-D slice, so its blobs have no thickness to be a lens with.
-Each blob is inflated into one: its thickness is 4 sqrt( h ), with
+Each blob gets inflated into one: its thickness is 4 sqrt( h ), with
 -lap h = 1 inside the wax and h = 0 at its edge, which makes a round blob
 exactly a sphere's chord, 2 sqrt( R^2 - r^2 ). `bstest --lens` checks that.
 Everything else is the physics.
 
 [![Bassalt — a lava lamp as an effect, for Resolume](docs/video-thumb.png)](https://www.youtube.com/watch?v=TUJutkxg1KY)
 
-*[Watch it](https://www.youtube.com/watch?v=TUJutkxg1KY) — 51 seconds: a hot
+*[Watch it](https://www.youtube.com/watch?v=TUJutkxg1KY) (51 seconds): a hot
 layer of wax leaving the base as pillars that neck and pinch off, every blob a
 lens over the world behind it, Dyed turning the clip into the wax, Pour turning
 a bright ball into wax that rises and breaks up, Salt floating all of it to the
-cap, and the velocity field underneath. Every frame is the real plugin's
-output: an FFGL plugin has no window, so the footage is rendered by this
-repository's own offline harness (`bstest --pipe`, driven by a cue sheet)
-rather than filmed off a screen, and the clips are Resolume's bundled demo
-media. The whole take is one run of one lamp, never reset.*
+cap, and the velocity field underneath. It's all the plugin's own output. An
+FFGL plugin doesn't have a window to film, so the footage comes from this repo's
+offline harness (`bstest --pipe`, driven by a cue sheet) rather than a screen,
+and the clips are Resolume's bundled demo media. The whole take is one run of
+one lamp, never reset.*
 
 ## Controls
 
@@ -154,11 +151,12 @@ lamp's. A portrait, square or wider frame is a slice of that same lamp, as
 wide as the frame: the bulb, Bass, Kick and Clip Heat are scaled by its width
 (aspect / 16:9), and the world behind is moved in by the same factor. So a
 9:16 canvas runs the 16:9 lamp's 54 C, convecting the full height of the
-frame. v0.1.0 put the whole bulb into the narrower lamp instead: at 9:16 it
-boiled at 124 C, every drop of wax floated to the cap, and a Cylinder sent
-42% of its columns past the clip's edge as horizontal streaks. Lamp Height
-still trades against Bulb at any aspect: on the default 30 W a 0.16 m lamp
-(Lamp Height 0.2) boils and a 1 m one (1.0) never melts.
+frame. v0.1.0 put the whole bulb into the narrower lamp instead, which went
+about as well as you'd expect: at 9:16 it boiled at 124 C, every drop of wax
+floated to the cap, and a Cylinder sent 42% of its columns past the clip's edge
+as horizontal streaks. Lamp Height still trades against Bulb at any aspect: on
+the default 30 W a 0.16 m lamp (Lamp Height 0.2) boils and a 1 m one (1.0)
+never melts.
 
 **The wax lasts.** In v0.1.0 the wax slowly dissolved into the water: over
 the first hour of lamp the water clouded to about 10% wax, and at 16:9 by
@@ -166,16 +164,16 @@ about 70 lamp-minutes (45 at 9:16) there were no blobs left at all, just an
 evenly cloudy lamp that never separated again. An hour of lamp is two minutes
 of wall time at 30x and twenty at the default 3x. The cause was numerical: moving the wax a
 cell at a time smeared its edge into the water, a little each step, faster than
-the model of the interface could take it back. Main pushes the smeared edge
+the model of the interface could take it back. Main now pushes the smeared edge
 back onto the interface as the wax moves, and does nothing to a lamp at rest.
 Two hours of lamp at 30x now keep 94% of the wax's area as blobs (89% at 9:16),
-with the water under 1% wax; six hours look the same. The difference shows
+with the water under 1% wax, and six hours look the same. The difference shows
 from the first moving frame, at every aspect, 16:9 included.
 
 ## Status
 
-**v0.1.1, released 2026-10-06, and honestly early.** It carries two fixes to
-v0.1.0 (2026-09-23): frames that are not 16:9 (*Any aspect*, above), and wax
+**v0.1.1, released 2026-10-06, and still early days.** It carries two fixes to
+v0.1.0 (2026-09-23): frames that aren't 16:9 (*Any aspect*, above), and wax
 that dissolved into the water after about an hour of lamp (*The wax lasts*,
 above).
 
@@ -183,14 +181,15 @@ It has **never been loaded into Resolume** on either platform. Everything here
 comes from the offline harness, which drives the real plugin class headlessly.
 `oxbow probe` on the *downloaded, notarised* release bundle reads it the way a
 host does and finds `SW Bassalt` / `BS01` / effect, 38 parameters; nothing
-else has run it. It has only been measured on macOS (Apple Silicon). The
-Windows x64 DLL is built by MSVC in CI (it compiled first time) and nothing
-has run it. There is no OpenFX port and no factory presets; the browser demo
-(below) is the plugin's shaders, not the plugin.
+else has run it. It's only been measured on macOS (Apple Silicon). The
+Windows x64 DLL is built by MSVC in CI (it compiled first time, which I've
+decided not to question) and nothing has run it. There's no OpenFX port and no
+factory presets, and the browser demo (below) is the plugin's shaders rather
+than the plugin.
 The macOS downloads are signed and notarised (`spctl`: Notarized Developer
 ID); the Windows ones are unsigned.
 
-What is measured, on this machine:
+What's measured, on this Mac:
 
 | | |
 | --- | --- |
@@ -216,13 +215,13 @@ What is measured, on this machine:
 
 Render cost (`bstest --bench`, the warm lamp at the default 3x, best of five
 batches, on a machine shared with other jobs): **1.8-2.7 ms/frame at 720p,
-2.0-2.7 at 1080p, 2.2-3.0 at 4K**. Detail sets the grid, not the raster, so 4K
-costs little more than 720p; Detail 64 is 1.0-1.5 ms. The cost is in the
-steps: at 30x it is 8-11 ms, and Detail 256 is 10-14 ms at 3x. The fix for the
+2.0-2.7 at 1080p, 2.2-3.0 at 4K**. Detail sets the grid rather than the raster,
+so 4K costs little more than 720p; Detail 64 is 1.0-1.5 ms. The cost is in the
+steps: at 30x it's 8-11 ms, and Detail 256 is 10-14 ms at 3x. The fix for the
 dissolving wax costs nothing measurable at 3x (1.75 ms at 720p before and
 after, back to back on an idle machine) and about 2% at 30x.
 
-What is **not** verified, and is the honest limit of this release:
+What **isn't** verified yet:
 
 - **A flat lamp, not a round one.** The flow is Darcy's law in a thin gap. A
   real round lamp's flow is neither that nor creeping flow, and nothing here is
@@ -236,30 +235,30 @@ What is **not** verified, and is the honest limit of this release:
 - **Speed 300x is really about 70x** (67x since the fix) once the lamp
   convects: the step is limited by the capillary time and there are at most 32
   a frame.
-- **No latent heat.** The wax stiffens below its melting point; it does not sit
+- **No latent heat.** The wax stiffens below its melting point; it doesn't sit
   at it.
 - **The lens rims streak** a little, where a lens's slope is steepest, and the
   Cylinder's outermost few per cent band where the rays graze.
 - **The wax's edge is held by a numerical device.** The fix for the dissolving
-  wax is a correction to the transport, tuned on this lamp, not physics. It
-  leaves faint specks of wax in the water that only View = Wax shows.
+  wax is a correction to the transport, tuned on this lamp, and it isn't physics.
+  It leaves faint specks of wax in the water that only View = Wax shows.
 - **Resolume's FFT bins** are assumed, as everywhere in the fleet; Bass and Kick
-  have not met real music.
+  haven't met real music.
 
 ## Browser demo
 
 **[bassalt-demo.stoatworks-labs.com](https://bassalt-demo.stoatworks-labs.com/)**
 runs all fourteen of the plugin's passes in WebGL2, on generated clips, with
-its own controls. It is **not the plugin**, and it says so: the shaders are
+its own controls. It's **not the plugin**, and it says so: the shaders are
 this repository's text, unedited (`demo/tools/check_shaders.py`, run by
 `tools/verify.sh`, fails on a drift), but the orchestration around them (the
 pass order, the multigrid's V-cycle, the substep limits, the events, the
 controls' conversions) is a hand port to JavaScript that only a reader checks.
-Three differences matter: **there is no audio**, so the Audio group is absent
-and the bulb runs on the Bulb control alone (exactly what the plugin does on
-silence); **`precise` is dropped** (GLSL ES 3.00 has none), so a browser may
+Three differences matter. **There's no audio**, so the Audio group is absent
+and the bulb runs on the Bulb control alone (which is what the plugin does on
+silence too). **`precise` is dropped** (GLSL ES 3.00 has none), so a browser may
 reassociate the sums that keep a level lamp still and the wax conserved to the
-bit; and the fastest-face read-back cannot wait on its fence, so the step
+bit. And the fastest-face read-back can't wait on its fence, so the step
 sequence depends on the GPU's timing. The page lists every difference.
 
 Deploy from the repo root with `cf-run npx wrangler deploy` (`wrangler.toml`,
@@ -268,8 +267,8 @@ a static-assets Worker; no build step). `demo/vendor/` is the shared kit from
 
 ## Build
 
-C++17 + GLSL 4.10, CMake, FFGL 2.1 (SDK vendored as a submodule). macOS builds
-are universal (arm64 + x86_64); Windows needs GLEW via vcpkg.
+It's C++17 + GLSL 4.10, CMake and FFGL 2.1 (the SDK is vendored as a submodule). macOS
+builds are universal (arm64 + x86_64); Windows needs GLEW via vcpkg.
 
     git clone --recursive https://github.com/stoatworks-labs/bassalt
     cmake -B build -DCMAKE_BUILD_TYPE=Release
