@@ -8,16 +8,40 @@
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./vendor/kit.css" />
     <link rel="canonical" href="https://bassalt-demo.stoatworks-labs.com/" />
+    <meta name="project-page" content="https://stoatworks-labs.com/software/bassalt/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Stoatworks Labs" />
+    <meta property="og:title" content="Bassalt — browser demo | Stoatworks Labs" />
+    <meta property="og:description" content="Try the Bassalt lava-lamp FFGL plugin for Resolume in your browser. The plugin's own fourteen GPU passes (Cahn-Hilliard wax, heat, a Hele-Shaw streamfunction on a multigrid, the lens and the composite) ported to WebGL2, with its pass orchestration ported to JavaScript. No audio here: the bulb runs on its Bulb control." />
+    <meta property="og:url" content="https://bassalt-demo.stoatworks-labs.com/" />
+    <meta property="og:image" content="https://stoatworks-labs.com/thumbs/bassalt.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="720" />
+    <meta property="og:image:alt" content="Bassalt" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <main id="demo">
       <noscript>
+        <h1>Bassalt</h1>
+        <p>
+          An FFGL effect that turns the frame into a lava lamp, and the lamp is
+          a working heat engine. A bulb warms wax that's denser than the water
+          when it's cold and lighter when it's hot, so it rises, cools at the
+          cap and sinks again. Bass drives the bulb and salt sets the water. The
+          pillars that neck and pinch off, and the stalls, come out of the
+          physics rather than being animated.
+        </p>
         <p>
           This demo runs the plugin's shaders in your browser, so it needs
           JavaScript and WebGL2. The plugin itself, its source and its downloads
           are on
           <a href="https://github.com/stoatworks-labs/bassalt">its repository</a>.
         </p>
+        <ul>
+          <li><a href="https://stoatworks-labs.com/software/bassalt/">Project page and downloads</a></li>
+          <li><a href="https://github.com/stoatworks-labs/bassalt">Source on GitHub</a></li>
+        </ul>
       </noscript>
     </main>
 

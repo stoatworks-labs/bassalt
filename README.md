@@ -18,6 +18,8 @@ itself, carried up and down.
 The name is the lamp's two real controls. **Bass** drives the bulb. **Salt** is
 what a lamp maker dissolves in the water to set its density against the wax.
 
+The [project page](https://stoatworks-labs.com/software/bassalt/) has the downloads and the video.
+
 ![A lava lamp seen through a glass cylinder: red wax lenses over a striped card, each showing a small inverted image of the ring behind](docs/hero-behind.png)
 
 <sub>Clip = Behind, Glass = Cylinder, eight minutes of lamp. The cylinder
